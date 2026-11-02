@@ -1,5 +1,5 @@
 name: Bug report
-description: Help us reproduce a problem with the engine, examples, or documentation.
+description: Help us reproduce a problem with the engine or its documentation.
 title: "[Bug] "
 body:
   - type: markdown
@@ -29,7 +29,7 @@ body:
       description: >-
         Run `os-optics doctor` or `python -c "from importlib.metadata import version; print(version('os-optics'))"`
         in the environment that reproduces the problem.
-      placeholder: "0.10.0"
+      placeholder: "0.12.0"
     validations:
       required: true
   - type: input

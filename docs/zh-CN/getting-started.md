@@ -78,22 +78,24 @@ os-optics export arrivals run --format csv --out arrivals.csv
 os-optics schema project
 ```
 
-OS Optics 0.10.0 提供语义编辑与精简结果读取；匹配的安装方式见
-[版本匹配说明](installation.md#让示例与安装版本一致)。将[编辑步骤](../workflow-recipes.md#edit-a-project-by-id)
-中的操作保存为 `edits.json`，然后保留原始 Project，运行修改后的设计：
+OS Optics 0.12.0 提供语义编辑与精简结果读取；匹配的安装方式见
+[版本匹配说明](installation.md#让文档与安装版本一致)。将编辑操作保存为 `ops.json`，例如带
+`instance_id` 和 `position_mm` 的 `set_component_pose`（`os-optics project update --help`
+列出全部操作），然后保留原始 Project，运行修改后的设计：
 
 ```bash
-python examples/edit_project.py project.json --edits edits.json --out revised.json
+os-optics project update project.json --ops ops.json -o revised.json
 os-optics project check revised.json
 os-optics project run revised.json --out-dir run-revised
 os-optics results targets run-revised
 os-optics results freshness run --project revised.json
 ```
 
-工具使用引擎执行语义验证，并保存重试记录。最后一条命令说明旧运行与修改后 Project 的关系。
-分别读取执行情况、科学量有效性和可选目标判定。未配置目标的运行仍可计算有用的科学量。
-保留每次运行以便比较；通过[预算示例](../workflow-recipes.md#computation-budgets)了解限额
-如何影响完成情况与可用结果。
+`project update` 按 `project check` 的规则检查结果；任一操作或检查被拒绝时不写入文件。
+最后一条命令说明旧运行与修改后 Project 的关系。分别读取执行情况、科学量有效性和可选目标判定。
+未配置目标的运行仍可计算有用的科学量。保留每次运行以便比较；os-optics-kit 的
+[预算示例](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#computation-budgets)说明限额如何影响完成情况与可用结果，
+[编辑步骤](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#edit-a-project-by-id)按对象标识修改项目并保存重试记录。
 
 ## 与自己的 Agent 协作
 
@@ -101,6 +103,6 @@ os-optics results freshness run --project revised.json
 
 > 使用 OS Optics 创建扩束系统示例，在本地运行，查看目标结果与功率收支，将光束到达数据导出为 CSV。展示三维光路，并解释光束尺寸和元件间距。
 
-命令行提供结构化输出，Python API 可以读取相同的项目和科学结果。[示例脚本](../../examples/beam_expander.py)展示了完整的本地工作流。
+命令行提供结构化输出，Python API 可以读取相同的项目和科学结果。os-optics-kit 中的[扩束系统案例](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander)展示了完整的本地工作流；`os-optics-kit skills install --dest DIR` 可为 Agent 安装工具包中的任务技能。
 
 下一步：[读取与导出结果](results.md)，或[继续完成硬件实现](hardware.md)。

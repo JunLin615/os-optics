@@ -79,26 +79,29 @@ os-optics export arrivals run --format csv --out arrivals.csv
 os-optics schema project
 ```
 
-OS Optics 0.10.0 includes semantic edits and compact reads; see
-[version matching](installation.md#match-the-examples-to-the-installed-version) for the
+OS Optics 0.12.0 includes semantic edits and compact reads; see
+[version matching](installation.md#match-the-documentation-to-the-installed-version) for the
 matching installation.
-Save the edits from the [editing recipe](../workflow-recipes.md#edit-a-project-by-id)
-as `edits.json`, then preserve the original Project while running the revised design:
+Save edit operations as `ops.json`, for example `set_component_pose` with an `instance_id`
+and `position_mm` (`os-optics project update --help` lists every operation), then preserve
+the original Project while running the revised design:
 
 ```bash
-python examples/edit_project.py project.json --edits edits.json --out revised.json
+os-optics project update project.json --ops ops.json -o revised.json
 os-optics project check revised.json
 os-optics project run revised.json --out-dir run-revised
 os-optics results targets run-revised
 os-optics results freshness run --project revised.json
 ```
 
-The helper delegates semantic validation to the engine and saves a retry record.
-The final command identifies how the old run differs from the revised Project.
-Inspect execution, quantity validity and optional target assessments separately.
-A target-free run can still calculate useful quantities. Keep each run for comparison;
-use the [budget example](../workflow-recipes.md#computation-budgets) to explore how limits
-affect completion and available results.
+`project update` checks the result like `project check` and writes nothing when an
+operation or the check is refused. The final command identifies how the old run differs
+from the revised Project. Inspect execution, quantity validity and optional target
+assessments separately. A target-free run can still calculate useful quantities. Keep each
+run for comparison; the [budget recipe](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#computation-budgets)
+in os-optics-kit explores how limits affect completion and available results, and its
+[editing recipe](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#edit-a-project-by-id) edits by object ID with a
+saved retry record.
 
 ## Working with your agent
 
@@ -106,6 +109,6 @@ Give your coding agent a concrete task:
 
 > Use OS Optics to create a beam-expander example. Run it locally, inspect the target outcomes and power budget, and export the beam-arrival table as CSV. Show me the 3D view and explain the beam sizes and component spacing.
 
-The CLI returns structured output, and the Python API lets an agent read the same project and scientific results. The [example script](../../examples/beam_expander.py) demonstrates the complete local workflow.
+The CLI returns structured output, and the Python API lets an agent read the same project and scientific results. The [beam-expander case](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander) in os-optics-kit shows the complete local workflow, and `os-optics-kit skills install --dest DIR` gives your agent the kit's task skills.
 
 Next: [Read and export results](results.md) or [continue to hardware](hardware.md).

@@ -18,8 +18,16 @@
 
 **[Agent 指南（英文）](AGENT_GUIDE.md) · [快速开始](docs/zh-CN/getting-started.md) · [用户指南](docs/zh-CN/README.md) · [PyPI](https://pypi.org/project/os-optics/) · [官网](https://opensci-optics.com/) · [问题反馈](https://github.com/JunLin615/os-optics/issues)**
 
-**OS Optics 0.10.0：** 本仓库的示例和工作流程工具对应已发布的 os-optics **0.10.0**。
-[engine-baseline.json](engine-baseline.json) 记录已验证的版本、wheel 与源码包哈希以及测试环境。
+| 名称 | 位置 | 内容 |
+| --- | --- | --- |
+| [`os-optics`](https://pypi.org/project/os-optics/) | PyPI | 引擎：光学元件目录、仿真、结果与三维视图 |
+| [`os-optics-kit`](https://pypi.org/project/os-optics-kit/) | PyPI | 基于引擎的工具、案例和 Agent 技能 |
+| [`os-optics`](https://github.com/JunLin615/os-optics) | GitHub | 本仓库：产品文档与问题反馈 |
+| [`os-optics-kit`](https://github.com/JunLin615/os-optics-kit) | GitHub | 社区仓库：工具、案例、技能与贡献 |
+
+使用 `python -m pip install "os-optics[protected]"` 安装引擎。完整案例和工具见
+[os-optics-kit](https://github.com/JunLin615/os-optics-kit)。本文档对应 os-optics **0.12.0**，
+该版本记录在 [engine-baseline.json](engine-baseline.json) 中。
 
 ## 你可以做什么
 
@@ -42,6 +50,7 @@ os-optics doctor
 
 也可以使用 `uv tool install "os-optics[protected]"` 安装独立命令行工具。
 虚拟环境配置和升级方法见[安装指南](docs/zh-CN/installation.md)。
+工具、案例和 Agent 技能通过 `python -m pip install os-optics-kit` 安装。
 0.9.0 及更早版本以 `opensci-engine` 名称发布；以该名称安装的环境同样运行
 `python -m pip install --upgrade "os-optics[protected]"`，之后使用 `os-optics` 命令和 `import os_optics`。
 以该名称通过 `uv tool` 安装的环境运行 `uv tool install "os-optics[protected]"`，之后使用 `os-optics`。
@@ -81,7 +90,7 @@ results = load_run("run-python")
 print(results.power_budget())
 ```
 
-可以直接运行仓库中的[扩束系统示例](examples/beam_expander.py)和[理想透镜聚焦示例](examples/ideal_lens_focus.py)。
+[扩束系统](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander)和[理想透镜聚焦](https://github.com/JunLin615/os-optics-kit/tree/main/cases/ideal-lens-focus)等完整案例收录在 os-optics-kit 中，每个案例包含项目文件、已验证的目标判定结果和运行方法。
 
 ## 文档
 
@@ -91,17 +100,13 @@ print(results.power_budget())
 | 第一个光学设计 | [阅读](docs/zh-CN/getting-started.md) | [Read](docs/en/getting-started.md) |
 | 目录与项目复现 | [阅读](docs/zh-CN/catalog.md) | [Read](docs/en/catalog.md) |
 | 结果、可视化与导出 | [阅读](docs/zh-CN/results.md) | [Read](docs/en/results.md) |
-| 设计研究：修改、扫描、比较、灵敏度、公差与三个光学工作流程 | [阅读](docs/zh-CN/workflows.md) | [Read](docs/en/workflows.md) |
-| 测量数据预处理、拟合与参考归一化 | [阅读](docs/zh-CN/measurements.md) | [Read](docs/en/measurements.md) |
 | 从设计到硬件 | [阅读](docs/zh-CN/hardware.md) | [Read](docs/en/hardware.md) |
-| 外部科学工具联用 | [阅读](docs/zh-CN/interop.md) | [Read](docs/en/interop.md) |
+| 设计研究：修改、扫描、比较、灵敏度、公差与三个光学工作流程（os-optics-kit） | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/workflows.md) |
+| 测量数据预处理、拟合与参考归一化（os-optics-kit） | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/measurements.md) |
+| 外部科学工具联用（os-optics-kit） | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/interop.md) |
 
-本仓库的示例和指南对应已发布的 **0.10.0** 版本。外部工具示例涵盖优化、衍射、量子光子学和超表面元件。其他软件包版本见 [PyPI 发布记录](https://pypi.org/project/os-optics/#history)。
-
-已验证的版本与测试环境记录在 [engine-baseline.json](engine-baseline.json) 中。[版本对齐检查](docs/engine-alignment.md)用于验证当前基线与候选 PyPI 版本；只有经过评审的更新才会推进基线。
+os-optics-kit 中的每个案例都注明了验证时使用的引擎和目录版本；外部工具案例涵盖优化、衍射、量子光子学和超表面元件。其他软件包版本见 [PyPI 发布记录](https://pypi.org/project/os-optics/#history)。
 
 ## 参与项目
 
-欢迎用中文或英文交流使用问题、分享示例设计、报告 Bug，以及改进文档。[提交 Issue](https://github.com/JunLin615/os-optics/issues/new/choose)，或通过 Pull Request 贡献文档和示例。
-
-本仓库汇集 OS Optics 的用户文档、示例和社区反馈。引擎通过 [PyPI](https://pypi.org/project/os-optics/) 安装，完整产品体验请访问 [opensci-optics.com](https://opensci-optics.com/)。
+欢迎用中文或英文交流使用问题、报告 Bug，以及改进文档。[提交 Issue](https://github.com/JunLin615/os-optics/issues/new/choose)，或通过 Pull Request 贡献文档。案例、工具和技能通过 [os-optics-kit](https://github.com/JunLin615/os-optics-kit) 分享，你的 Agent 可以把完成的设计整理成案例 Pull Request。
