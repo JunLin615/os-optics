@@ -111,3 +111,7 @@ Each case in os-optics-kit states the engine and catalog releases it was verifie
 ## Get involved
 
 Questions, bug reports, and documentation improvements are welcome in English or Chinese. [Open an issue](https://github.com/JunLin615/os-optics/issues/new/choose) or send a documentation pull request. Share cases, tools and skills through [os-optics-kit](https://github.com/JunLin615/os-optics-kit), where your agent can package a finished design as a case pull request.
+
+## License
+
+The documentation, examples and scripts in this GitHub repository are available under the [MIT License](LICENSE). It covers this repository only: the os-optics engine distributed on PyPI remains under the OpenSci Engine License.
