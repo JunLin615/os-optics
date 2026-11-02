@@ -25,7 +25,7 @@ Start with a working optical design, then explore its results and adapt it to yo
 | [Detector measurements](https://github.com/JunLin615/os-optics-kit/tree/main/cases/detector-measurements) | [Measurement analysis](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/measurements.md) |
 | [Optimization](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-optimization), [diffraction](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-diffraction), [quantum photonics](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-quantum), [metasurface](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-metasurface) | [External tools](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/interop.md) |
 
-Each case states whether it uses the optical catalog and the engine and catalog releases it was verified with. `uv tool install` provides an isolated CLI; use the [pip installation](installation.md) for Python imports.
+Each case states whether it uses the optical catalog and the engine and catalog releases it was verified with. Install os-optics-kit into the same Python environment as os-optics: `python -m pip install os-optics-kit`.
 
 These guides describe **os-optics 0.12.0**; see [version matching](installation.md#match-the-documentation-to-the-installed-version) for the matching installation. Commands expose their options through `--help`; Python APIs are documented in the installed package and the [PyPI reference](https://pypi.org/project/os-optics/).
 

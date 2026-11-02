@@ -25,7 +25,7 @@
 | [探测器测量数据](https://github.com/JunLin615/os-optics-kit/tree/main/cases/detector-measurements) | [测量数据分析](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) |
 | [优化](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-optimization)、[衍射](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-diffraction)、[量子光子学](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-quantum)、[超表面](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-metasurface) | [外部工具联用](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) |
 
-每个案例注明是否使用光学目录，以及验证时使用的引擎和目录版本。`uv tool install` 提供独立命令行工具；需要在 Python 中导入时，请采用 [pip 安装方式](installation.md)。
+每个案例注明是否使用光学目录，以及验证时使用的引擎和目录版本。os-optics-kit 需安装在 os-optics 所在的同一 Python 环境中：`python -m pip install os-optics-kit`。
 
 这些指南对应 **os-optics 0.12.0**；匹配的安装方式见[版本匹配说明](installation.md#让文档与安装版本一致)。命令参数可通过 `--help` 查看；Python API 说明可查阅已安装的软件包和 [PyPI 参考文档](https://pypi.org/project/os-optics/)。
 

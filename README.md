@@ -106,10 +106,8 @@ Worked cases such as the [beam expander](https://github.com/JunLin615/os-optics-
 | Measurement cleaning, fitting, and reference normalization (os-optics-kit) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/measurements.md) | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) |
 | External scientific tools (os-optics-kit) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/interop.md) | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) |
 
-These guides describe os-optics **0.12.0**. Each case in os-optics-kit states the engine and catalog releases it was verified with; the external-tool cases cover optimization, diffraction, quantum photonics and metasurface components. Find available package versions in the [PyPI release history](https://pypi.org/project/os-optics/#history).
+Each case in os-optics-kit states the engine and catalog releases it was verified with; the external-tool cases cover optimization, diffraction, quantum photonics and metasurface components. Find available package versions in the [PyPI release history](https://pypi.org/project/os-optics/#history).
 
 ## Get involved
 
 Questions, bug reports, and documentation improvements are welcome in English or Chinese. [Open an issue](https://github.com/JunLin615/os-optics/issues/new/choose) or send a documentation pull request. Share cases, tools and skills through [os-optics-kit](https://github.com/JunLin615/os-optics-kit), where your agent can package a finished design as a case pull request.
-
-This repository holds the product documentation and feedback for OS Optics. Install the engine from [PyPI](https://pypi.org/project/os-optics/), find tools and cases in [os-optics-kit](https://github.com/JunLin615/os-optics-kit), and explore the full platform at [opensci-optics.com](https://opensci-optics.com/).

@@ -105,10 +105,8 @@ print(results.power_budget())
 | 测量数据预处理、拟合与参考归一化（os-optics-kit） | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/measurements.md) |
 | 外部科学工具联用（os-optics-kit） | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/interop.md) |
 
-这些指南对应 os-optics **0.12.0**。os-optics-kit 中的每个案例都注明了验证时使用的引擎和目录版本；外部工具案例涵盖优化、衍射、量子光子学和超表面元件。其他软件包版本见 [PyPI 发布记录](https://pypi.org/project/os-optics/#history)。
+os-optics-kit 中的每个案例都注明了验证时使用的引擎和目录版本；外部工具案例涵盖优化、衍射、量子光子学和超表面元件。其他软件包版本见 [PyPI 发布记录](https://pypi.org/project/os-optics/#history)。
 
 ## 参与项目
 
 欢迎用中文或英文交流使用问题、报告 Bug，以及改进文档。[提交 Issue](https://github.com/JunLin615/os-optics/issues/new/choose)，或通过 Pull Request 贡献文档。案例、工具和技能通过 [os-optics-kit](https://github.com/JunLin615/os-optics-kit) 分享，你的 Agent 可以把完成的设计整理成案例 Pull Request。
-
-本仓库汇集 OS Optics 的产品文档和问题反馈。引擎通过 [PyPI](https://pypi.org/project/os-optics/) 安装，工具和案例见 [os-optics-kit](https://github.com/JunLin615/os-optics-kit)，完整产品体验请访问 [opensci-optics.com](https://opensci-optics.com/)。
