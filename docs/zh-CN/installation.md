@@ -4,17 +4,17 @@
 
 OS Optics 支持 Windows、macOS 和 Linux，要求 **Python 3.11 及以上版本**。编写 Python 脚本或使用 Notebook 时选择 pip；只需要独立命令行工具时可选择 uv。
 
-## 让示例与安装版本一致
+## 让文档与安装版本一致
 
-本仓库的示例和指南使用 os-optics **0.10.0**，该版本及其 wheel、源码包哈希和测试环境记录在
-[engine-baseline.json](../../engine-baseline.json)。请在全新环境中安装该精确版本：
+本文档对应 os-optics **0.12.0**，该版本记录在 [engine-baseline.json](../../engine-baseline.json)。
+请在全新环境中安装该精确版本：
 
 ```bash
-python -m pip install "os-optics[protected]==0.10.0"
+python -m pip install "os-optics[protected]==0.12.0"
 ```
 
-[对齐检查](../engine-alignment.md)会在该安装上运行示例；运行示例前先用
-`os-optics doctor` 查看已安装版本。
+`os-optics doctor` 显示已安装版本。[os-optics-kit](https://github.com/JunLin615/os-optics-kit)
+中的每个案例都注明了验证时使用的引擎版本。
 
 ## Python 环境
 
@@ -90,9 +90,9 @@ uv tool upgrade os-optics
 之后使用 `os-optics` 命令和 `import os_optics`。以该名称通过 `uv tool` 安装的环境运行
 `uv tool install "os-optics[protected]"`，之后使用 `os-optics`。
 
-运行 `os-optics doctor` 查看已安装版本。需要固定这些示例对应的版本时，安装 `"os-optics[protected]==0.10.0"`。
+运行 `os-optics doctor` 查看已安装版本。需要固定本文档对应的版本时，安装 `"os-optics[protected]==0.12.0"`。
 
-[engine-baseline.json](../../engine-baseline.json)记录已验证的版本和测试环境。维护者可以通过[版本对齐流程](../engine-alignment.md)检查其他已发布版本；候选版本检查通过后也不会自动修改基线。
+工具、案例和 Agent 技能是独立的软件包。`python -m pip install os-optics-kit` 将它们安装到同一环境中；该软件包声明了它支持的 os-optics 版本。
 
 ## 常见安装问题
 

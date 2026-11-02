@@ -18,9 +18,16 @@ When a design is ready, continue to [OpenSci](https://opensci-optics.com/) for o
 
 **[Agent guide](AGENT_GUIDE.md) · [Get started](docs/en/getting-started.md) · [User guide](docs/en/README.md) · [PyPI](https://pypi.org/project/os-optics/) · [Website](https://opensci-optics.com/) · [Feedback](https://github.com/JunLin615/os-optics/issues)**
 
-**OS Optics 0.10.0:** these examples and workflow helpers run on the published
-os-optics **0.10.0** release. [engine-baseline.json](engine-baseline.json) records
-the verified version, its wheel and source hashes, and the tested environment.
+| Name | Where | Contents |
+| --- | --- | --- |
+| [`os-optics`](https://pypi.org/project/os-optics/) | PyPI | The engine: optical catalog, simulation, results and 3D view |
+| [`os-optics-kit`](https://pypi.org/project/os-optics-kit/) | PyPI | Tools, cases and agent skills built on the engine |
+| [`os-optics`](https://github.com/JunLin615/os-optics) | GitHub | This repository: product documentation and feedback |
+| [`os-optics-kit`](https://github.com/JunLin615/os-optics-kit) | GitHub | Community repository: tools, cases, skills and contributions |
+
+Install the engine with `python -m pip install "os-optics[protected]"`. Browse worked cases
+and tools in [os-optics-kit](https://github.com/JunLin615/os-optics-kit). This documentation
+describes os-optics **0.12.0**, the release recorded in [engine-baseline.json](engine-baseline.json).
 
 ## What you can do
 
@@ -43,6 +50,7 @@ os-optics doctor
 
 Prefer an isolated command-line tool? Use `uv tool install "os-optics[protected]"`.
 See the [installation guide](docs/en/installation.md) for virtual environments and upgrades.
+Tools, cases and agent skills install with `python -m pip install os-optics-kit`.
 Up to 0.9.0 the package was published as `opensci-engine`; an installation under that name
 takes the same `python -m pip install --upgrade "os-optics[protected]"`, then uses the
 `os-optics` command and `import os_optics`. A `uv tool` installation under the earlier name
@@ -83,7 +91,7 @@ results = load_run("run-python")
 print(results.power_budget())
 ```
 
-Try the runnable [beam expander](examples/beam_expander.py) and [ideal-lens focus](examples/ideal_lens_focus.py) examples.
+Worked cases such as the [beam expander](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander) and [ideal-lens focus](https://github.com/JunLin615/os-optics-kit/tree/main/cases/ideal-lens-focus) are in os-optics-kit, each with its Project, verified target outcomes and run instructions.
 
 ## Documentation
 
@@ -93,17 +101,15 @@ Try the runnable [beam expander](examples/beam_expander.py) and [ideal-lens focu
 | Your first optical design | [Read](docs/en/getting-started.md) | [阅读](docs/zh-CN/getting-started.md) |
 | Catalog and reproducible projects | [Read](docs/en/catalog.md) | [阅读](docs/zh-CN/catalog.md) |
 | Results, visualization, and export | [Read](docs/en/results.md) | [阅读](docs/zh-CN/results.md) |
-| Design studies: edits, sweeps, comparisons, sensitivity, tolerance, and three optical workflows | [Read](docs/en/workflows.md) | [阅读](docs/zh-CN/workflows.md) |
-| Measurement cleaning, fitting, and reference normalization | [Read](docs/en/measurements.md) | [阅读](docs/zh-CN/measurements.md) |
 | From design to hardware | [Read](docs/en/hardware.md) | [阅读](docs/zh-CN/hardware.md) |
-| External scientific tools | [Read](docs/en/interop.md) | [阅读](docs/zh-CN/interop.md) |
+| Design studies: edits, sweeps, comparisons, sensitivity, tolerance, and three optical workflows (os-optics-kit) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/workflows.md) | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md) |
+| Measurement cleaning, fitting, and reference normalization (os-optics-kit) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/measurements.md) | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) |
+| External scientific tools (os-optics-kit) | [Read](https://github.com/JunLin615/os-optics-kit/blob/main/docs/en/interop.md) | [阅读](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) |
 
-The examples and guides use the published **0.10.0** package. External-tool examples cover optimization, diffraction, quantum photonics and metasurface components. Find available package versions in the [PyPI release history](https://pypi.org/project/os-optics/#history).
-
-The verified version and test environment are recorded in [engine-baseline.json](engine-baseline.json). [Release-alignment checks](docs/engine-alignment.md) validate this baseline and candidate PyPI releases; only a reviewed update advances the baseline.
+These guides describe os-optics **0.12.0**. Each case in os-optics-kit states the engine and catalog releases it was verified with; the external-tool cases cover optimization, diffraction, quantum photonics and metasurface components. Find available package versions in the [PyPI release history](https://pypi.org/project/os-optics/#history).
 
 ## Get involved
 
-Questions, example designs, bug reports, and documentation improvements are welcome in English or Chinese. [Open an issue](https://github.com/JunLin615/os-optics/issues/new/choose) or send a documentation or example pull request.
+Questions, bug reports, and documentation improvements are welcome in English or Chinese. [Open an issue](https://github.com/JunLin615/os-optics/issues/new/choose) or send a documentation pull request. Share cases, tools and skills through [os-optics-kit](https://github.com/JunLin615/os-optics-kit), where your agent can package a finished design as a case pull request.
 
-This repository brings together the user documentation, examples, and community feedback for OS Optics. Install the engine from [PyPI](https://pypi.org/project/os-optics/) and explore the full platform at [opensci-optics.com](https://opensci-optics.com/).
+This repository holds the product documentation and feedback for OS Optics. Install the engine from [PyPI](https://pypi.org/project/os-optics/), find tools and cases in [os-optics-kit](https://github.com/JunLin615/os-optics-kit), and explore the full platform at [opensci-optics.com](https://opensci-optics.com/).

@@ -4,19 +4,19 @@
 
 OS Optics runs on Windows, macOS, and Linux with **Python 3.11 or newer**. Choose pip for Python scripts and notebooks, or uv for a standalone command-line tool.
 
-## Match the examples to the installed version
+## Match the documentation to the installed version
 
-These examples and guides use os-optics **0.10.0**, recorded in
-[engine-baseline.json](../../engine-baseline.json) together with its wheel and source
-hashes and the tested environment. Install that exact version in a fresh environment:
+This documentation describes os-optics **0.12.0**, the release recorded in
+[engine-baseline.json](../../engine-baseline.json). Install that exact version in a fresh
+environment:
 
 ```bash
-python -m pip install "os-optics[protected]==0.10.0"
+python -m pip install "os-optics[protected]==0.12.0"
 ```
 
-The [alignment checks](../engine-alignment.md) run the examples against that
-installation. `os-optics doctor` reports the installed version before you run an
-example.
+`os-optics doctor` reports the installed version. Each case in
+[os-optics-kit](https://github.com/JunLin615/os-optics-kit) states the engine release it
+was verified with.
 
 ## Python environment
 
@@ -93,9 +93,9 @@ Up to 0.9.0 the package was published as `opensci-engine` (command `opensci-engi
 Then use the `os-optics` command and `import os_optics`. A `uv tool` installation under the
 earlier name installs the new one with `uv tool install "os-optics[protected]"`, then uses `os-optics`.
 
-Run `os-optics doctor` to see the installed version. To pin the version these examples use, install `"os-optics[protected]==0.10.0"`.
+Run `os-optics doctor` to see the installed version. To pin the documented version, install `"os-optics[protected]==0.12.0"`.
 
-[engine-baseline.json](../../engine-baseline.json) records the verified release and test environment. Maintainers can check another released version with the [alignment workflow](../engine-alignment.md); a successful candidate check does not automatically change this baseline.
+Tools, cases and agent skills are a separate package. `python -m pip install os-optics-kit` installs them into the same environment; the package declares the os-optics releases it supports.
 
 ## Common setup questions
 

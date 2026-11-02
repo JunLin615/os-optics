@@ -9,22 +9,24 @@
 3. [使用光学目录](catalog.md)：查找元件、管理版本、复现项目。
 4. [读取与导出结果](results.md)：验证状态、光束数据、可视化和 CSV 导出。
 5. [继续完成硬件实现](hardware.md)：元件选型、装配预览和订购。
-6. [设计研究与工作流程](workflows.md)：按标识修改项目、参数扫描、运行比较、绘图、报告、灵敏度与公差分析，以及三个参数化光学工作流程。
-7. [分析测量数据](measurements.md)：背景扣除、参考归一化、线性拟合及残差图。
-8. [联用外部科学工具](interop.md)：用 SciPy、Optuna、SALib、LightPipes、prysm、POPPY、Perceval、Piquasso 和 grcwa 完成优化、衍射、量子光子学和超表面元件计算。
+6. [设计研究与工作流程](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md)（os-optics-kit）：按标识修改项目、参数扫描、运行比较、绘图、报告、灵敏度与公差分析，以及三个参数化光学工作流程。
+7. [分析测量数据](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md)（os-optics-kit）：背景扣除、参考归一化、线性拟合及残差图。
+8. [联用外部科学工具](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md)（os-optics-kit）：用 SciPy、Optuna、SALib、LightPipes、prysm、POPPY、Perceval、Piquasso 和 grcwa 完成优化、衍射、量子光子学和超表面元件计算。
 
-## 示例
+## 案例、工具与技能
 
-| 示例 | 在仓库根目录运行 | 是否使用光学目录 |
-| --- | --- | --- |
-| [扩束系统](../../examples/beam_expander.py) | `python examples/beam_expander.py --out run-example` | 是；首次使用时下载 |
-| [理想透镜聚焦](../../examples/ideal_lens_focus.py) | `python examples/ideal_lens_focus.py` | 否；使用数学模型元件 |
-| [设计研究与工作流程](../../examples/) | 按[工作流程指南](workflows.md)运行 | 第 1–3 节使用；第 4–5 节不使用 |
-| [测量数据分析](../../examples/analyze_measurements.py) | 按[两个 CSV 示例](measurements.md)运行 | 否；无需引擎，安装 `requirements-examples.txt` |
-| [外部工具联用](../../examples/interop/) | 按[外部工具指南](interop.md)运行 | 否；安装各专题的依赖文件 |
+[os-optics-kit](https://github.com/JunLin615/os-optics-kit) 收录基于引擎的完整案例、可复用工具和 Agent 技能。使用 `python -m pip install os-optics-kit` 安装；`os-optics-kit cases list` 列出全部案例。
 
-运行脚本前，将软件包安装到当前 Python 环境。`uv tool install` 提供独立命令行工具；需要在 Python 中导入时，请采用 [pip 安装方式](installation.md)。
+| 案例 | 指南 |
+| --- | --- |
+| [扩束系统](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander) | [第一个设计](getting-started.md) |
+| [理想透镜聚焦](https://github.com/JunLin615/os-optics-kit/tree/main/cases/ideal-lens-focus) | [结果](results.md) |
+| [扩束与聚焦](https://github.com/JunLin615/os-optics-kit/tree/main/cases/expansion-focus)、[偏振控制](https://github.com/JunLin615/os-optics-kit/tree/main/cases/polarization-control)、[反射镜对准](https://github.com/JunLin615/os-optics-kit/tree/main/cases/mirror-alignment) | [设计研究与工作流程](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md) |
+| [探测器测量数据](https://github.com/JunLin615/os-optics-kit/tree/main/cases/detector-measurements) | [测量数据分析](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md) |
+| [优化](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-optimization)、[衍射](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-diffraction)、[量子光子学](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-quantum)、[超表面](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-metasurface) | [外部工具联用](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md) |
 
-本仓库的指南和示例使用 **os-optics 0.10.0**；匹配的安装方式见[版本匹配说明](installation.md#让示例与安装版本一致)。命令参数可通过 `--help` 查看；Python API 说明可查阅已安装的软件包和 [PyPI 参考文档](https://pypi.org/project/os-optics/)。
+每个案例注明是否使用光学目录，以及验证时使用的引擎和目录版本。`uv tool install` 提供独立命令行工具；需要在 Python 中导入时，请采用 [pip 安装方式](installation.md)。
+
+这些指南对应 **os-optics 0.12.0**；匹配的安装方式见[版本匹配说明](installation.md#让文档与安装版本一致)。命令参数可通过 `--help` 查看；Python API 说明可查阅已安装的软件包和 [PyPI 参考文档](https://pypi.org/project/os-optics/)。
 
 [OpenSci 官网](https://opensci-optics.com/) · [软件包版本](https://pypi.org/project/os-optics/#history) · [交流与反馈](https://github.com/JunLin615/os-optics/issues/new/choose)

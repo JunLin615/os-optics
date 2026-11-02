@@ -27,16 +27,16 @@ os-optics project verify run
 
 ## Interpret the result
 
-These compact controls are available in 0.10.0; install the matching package as
-described in [version matching](installation.md#match-the-examples-to-the-installed-version).
+These compact controls are available in 0.12.0; install the matching package as
+described in [version matching](installation.md#match-the-documentation-to-the-installed-version).
 
 When a quantity lies outside a component model's declared wavelength, angle or beam
 domain, the targets that depend on it are assessed `INDETERMINATE` and carry the
 model-scope issue code in `applicability_issue_codes`. The quantity keeps its value,
 unit and bounds, so you can read the number while the assessment states that it does
 not establish validity outside the declared domain. Keep the calculation inside the
-domain when you need a `MET` or `UNMET` assessment; see the
-[metasurface validation record](../interop-validation.md) for worked cases.
+domain when you need a `MET` or `UNMET` assessment; the
+[metasurface case](https://github.com/JunLin615/os-optics-kit/tree/main/cases/interop-metasurface) in os-optics-kit works through such a domain.
 
 ```bash
 os-optics results targets run
@@ -63,67 +63,31 @@ A physical or computation-budget edit is reported as `PHYSICS_CHANGED`; a target
 edit as `TARGETS_CHANGED`. Preserve the original run and its hashes. Changing targets
 does not turn an old target assessment into a new one. Another engine build can leave a
 run `CURRENT` when both Project and lowered input match; inspect `engine_build_matches`
-when reproducing the calculation. See [comparison recipes](../workflow-recipes.md#compare-and-freshness).
+when reproducing the calculation. See the [comparison recipes](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#compare-and-freshness) in os-optics-kit.
 
 `project verify` checks recorded artifact hashes and consistency. It does not compare
 the calculation with an independent optical solution or an experiment. The analytical
-references in the worked examples provide separate checks with stated assumptions.
+references in the worked cases provide separate checks with stated assumptions.
 
 The read command `results targets` exits 0 when it answers, including an unmet target.
 `results freshness` uses 0 for `CURRENT`, 1 for `HISTORICAL` and 2 for `UNDETERMINED`.
 Read structured assessments to decide a scientific task's result; command completion
 alone is insufficient.
 
-## Compact summaries from the examples
+## Compact summaries and worked cases
 
-Run the examples from the repository root:
-
-```bash
-python examples/beam_expander.py --out run-example
-python examples/ideal_lens_focus.py --out run-ideal-focus
-```
-
-Each example writes one JSON summary to standard output. Structured keys remain in English; diagnostics go to standard error. The default output includes the overall `status`, `engine_status`, nullable `validation_status`, and target identifiers, metrics, actual values, units, applicable bounds, outcomes, and available messages or issue codes. It also preserves actionable `issues`, `model_scope_issues`, and `element_models`, along with `identity` and `integrity` information. The compact `power_budget`, when available, contains scalar totals and `total_sinks`; the full ledger is available with `--details`.
-
-The `artifacts` and `exports` fields point to complete data on disk. The beam-expander example saves a native local run and an arrivals CSV, and provides a `view_command` for its 3D scene. The ideal-lens example runs without a catalog download and saves its request, simulation result, rays, and arrivals under `--out`. Its low-level result does not include a native local-run manifest or a 3D viewer command. The default output directories are `run-example` and `run-ideal-focus`, respectively.
-
-Read a previously saved native local run without repeating the simulation:
+[os-optics-kit](https://github.com/JunLin615/os-optics-kit) adds compact JSON summaries of saved runs and worked cases with
+verified target outcomes:
 
 ```bash
-python examples/result_summary.py run-example
-python examples/result_summary.py run-example --details
+python -m pip install os-optics-kit
+os-optics-kit summary run
+os-optics-kit cases list
 ```
 
-The helper checks saved artifact integrity before summarizing the run through the public results API. It preserves execution, requirement and quantity information alongside the legacy status fields. This command expects the native local-run artifacts produced by the beam-expander example or `os-optics project run`; the ideal-lens output is a low-level result bundle. The reusable Python functions in [result_summary.py](../../examples/result_summary.py) are `summarize_results(results, *, artifacts=None, details=False)` and `summarize_run(directory, *, details=False)`. Both return a dictionary suitable for JSON output.
-
-The example scripts and saved-run summary command use `requirement_outcome` for exit
-behavior. The raw aggregate `status` remains in the record alongside
-`outcome.execution` and `outcome.requirements`. These are the helper exit codes:
-
-Exit `0` describes the selected requirements, not execution completeness. For example,
-a budget-limited run with no targets can retain `execution.outcome: PARTIAL`, aggregate
-`status: UNKNOWN` and `requirement_outcome: NOT_APPLICABLE` while exiting `0`.
-Inspect execution and quantity validity before using its values.
-
-| Exit code | Reported result |
-| --- | --- |
-| `0` | selected requirements met or not applicable |
-| `1` | Selected requirement unmet |
-| `2` | Selected requirement indeterminate |
-| `3` | Selected quantity outside its model |
-| `4` | Input, artifact-integrity, runtime, or command-usage error |
-
-Design outcomes, including a non-passing result, still produce a JSON summary and preserve complete data. Input or runtime exceptions produce a JSON error on standard error, leave standard output empty, and exit `4`. A saved run with failed or cancelled execution instead retains its JSON result summary on standard output and also exits `4`. These example error codes are separate from the engine CLI's file and usage error codes.
-
-The ideal-lens target can be changed with `--maximum-radius-mm` (default `0.05`). These commands exercise the default target, a stricter target intended to fail, and invalid input:
-
-```bash
-python examples/ideal_lens_focus.py --out run-focus-default
-python examples/ideal_lens_focus.py --out run-focus-strict --maximum-radius-mm 0.001
-python examples/ideal_lens_focus.py --maximum-radius-mm -1
-```
-
-The radius bound must be finite and nonnegative; `nan` is also invalid. Inspect `$LASTEXITCODE` in PowerShell or `$?` in a POSIX shell immediately after each command. Use `--details` with either example to include the full power ledger in its summary; full ray data remains available through the saved artifact paths.
+The summary reads the saved run without repeating the simulation. The
+[beam-expander](https://github.com/JunLin615/os-optics-kit/tree/main/cases/beam-expander) and [ideal-lens focus](https://github.com/JunLin615/os-optics-kit/tree/main/cases/ideal-lens-focus) cases
+show a catalog design and a catalog-free design with their target outcomes.
 
 ## View and share
 

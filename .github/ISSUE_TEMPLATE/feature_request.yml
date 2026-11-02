@@ -1,5 +1,5 @@
 name: Feature or documentation
-description: Suggest a capability, example, guide, or translation.
+description: Suggest a capability, guide, or translation.
 title: "[Idea] "
 body:
   - type: markdown
@@ -19,6 +19,6 @@ body:
     id: suggestion
     attributes:
       label: Your suggestion
-      description: Suggest a capability, example, documentation improvement, or translation.
+      description: Suggest a capability, documentation improvement, or translation.
     validations:
       required: true
