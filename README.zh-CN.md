@@ -110,3 +110,7 @@ os-optics-kit 中的每个案例都注明了验证时使用的引擎和目录版
 ## 参与项目
 
 欢迎用中文或英文交流使用问题、报告 Bug，以及改进文档。[提交 Issue](https://github.com/JunLin615/os-optics/issues/new/choose)，或通过 Pull Request 贡献文档。案例、工具和技能通过 [os-optics-kit](https://github.com/JunLin615/os-optics-kit) 分享，你的 Agent 可以把完成的设计整理成案例 Pull Request。
+
+## 许可
+
+本 GitHub 仓库中的文档、示例和脚本采用 [MIT 许可证](LICENSE)。该许可仅适用于本仓库；通过 PyPI 分发的 os-optics 引擎仍采用 OpenSci Engine License。
