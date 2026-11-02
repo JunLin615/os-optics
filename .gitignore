@@ -9,3 +9,4 @@ project.json
 arrivals.csv
 rays.jsonl
 .DS_Store
+quickstart/
