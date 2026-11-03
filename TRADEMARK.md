@@ -2,7 +2,7 @@
 
 English · [简体中文](#商标)
 
-The names **OpenSci** and **OS Optics**, the OpenSci logo ([assets/logo.svg](assets/logo.svg)) and the other brand artwork in [assets](assets) are trademarks of OpenSci. The [MIT License](LICENSE) of this repository covers its documentation and scripts; it grants no right to use these names or the logo.
+The names **OpenSci** and **OS Optics**, the OpenSci logo ([assets/logo.svg](assets/logo.svg)) and the other brand artwork in [assets](assets) are trademarks of OpenSci; the brand artwork is not licensed under MIT ([assets/LICENSE](assets/LICENSE)). The [MIT License](LICENSE) of this repository covers its documentation and scripts; it grants no right to use these names or the logo.
 
 ## Use without asking
 
@@ -20,7 +20,7 @@ To ask for permission, [open an issue](https://github.com/JunLin615/os-optics/is
 
 ## 商标
 
-**OpenSci** 和 **OS Optics** 名称、OpenSci 标志（[assets/logo.svg](assets/logo.svg)）以及 [assets](assets) 中的其他品牌图形是 OpenSci 的商标。本仓库的 [MIT 许可证](LICENSE) 适用于其中的文档和脚本，不授予使用这些名称或标志的权利。
+**OpenSci** 和 **OS Optics** 名称、OpenSci 标志（[assets/logo.svg](assets/logo.svg)）以及 [assets](assets) 中的其他品牌图形是 OpenSci 的商标；品牌图形不采用 MIT 许可（[assets/LICENSE](assets/LICENSE)）。本仓库的 [MIT 许可证](LICENSE) 适用于其中的文档和脚本，不授予使用这些名称或标志的权利。
 
 ### 无需申请的使用
 

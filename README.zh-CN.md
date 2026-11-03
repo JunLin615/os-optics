@@ -113,4 +113,4 @@ os-optics-kit 中的每个案例都注明了验证时使用的引擎和目录版
 
 ## 许可
 
-本仓库中的文档和脚本采用 [MIT 许可证](LICENSE)。OpenSci 和 OS Optics 名称及标志是商标，不在该许可范围内，详见 [TRADEMARK.md](TRADEMARK.md)。通过 PyPI 分发的 os-optics 引擎仍采用 OpenSci Engine License，[os-optics-kit](https://github.com/JunLin615/os-optics-kit) 仍采用 MIT 许可证。
+本仓库中的文档和脚本采用 [MIT 许可证](LICENSE)。OpenSci 和 OS Optics 名称是商标；`assets/` 中的标志和品牌图形也是商标，不在该许可范围内（[assets/LICENSE](assets/LICENSE)、[TRADEMARK.md](TRADEMARK.md)）。通过 PyPI 分发的 os-optics 引擎仍采用 OpenSci Engine License，[os-optics-kit](https://github.com/JunLin615/os-optics-kit) 仍采用 MIT 许可证。
