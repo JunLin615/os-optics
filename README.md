@@ -114,4 +114,4 @@ Questions, bug reports, and documentation improvements are welcome in English or
 
 ## License
 
-The documentation, examples and scripts in this GitHub repository are available under the [MIT License](LICENSE). It covers this repository only: the os-optics engine distributed on PyPI remains under the OpenSci Engine License.
+The documentation and scripts in this repository are available under the [MIT License](LICENSE). The OpenSci and OS Optics names and logo are trademarks and are not covered by that licence; see [TRADEMARK.md](TRADEMARK.md). The os-optics engine distributed on PyPI remains under the OpenSci Engine License, and [os-optics-kit](https://github.com/JunLin615/os-optics-kit) remains under the MIT License.
