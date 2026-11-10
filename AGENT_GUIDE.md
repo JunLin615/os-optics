@@ -28,10 +28,10 @@ os-optics view run --no-browser --snapshot shots
 Edit with `os-optics project update project.json --ops ops.json -o revised.json`: all
 operations and the check pass, or nothing is written. `results freshness RUN --project P`
 says whether a saved run matches an edited Project. `results describe` and `export` read
-the scientific data without rerunning; `results imaging|ghosts RUN --monitor ID`,
-`results focal-field|field`, `project cavity` and `results configurations` derive further
-analyses.
-`project run` reports progress on stderr; Ctrl-C stops it (exit 130, `run_stopped.json`).
+the scientific data without rerunning. Further analyses: `results imaging|ghosts|field RUN
+--monitor ID`, `results focal-field --request FILE [RUN --monitor ID]`, `project cavity
+PROJECT` and `results configurations RUN`.
+`project run` reports progress on stderr; Ctrl-C stops it (exit 130, `run_stopped.json`; other files are kept).
 Details: [results](docs/en/results.md).
 
 ## Tools, cases and skills
@@ -61,8 +61,9 @@ No configured target means no requirement was assessed.
 target `MET` (or none declared), 1 a target `UNMET`, 2 `INDETERMINATE` or `NOT_APPLICABLE`,
 3 the calculation did not complete (`PARTIAL`, including `RETURN_ANALYSIS_BUDGET`, or
 `FAILED`). `aggregate` (or `OS_OPTICS_STATUS_CONTRACT=aggregate`) exits by the run status:
-`PASS`/`WARNING`/`NOT_APPLICABLE` 0, `FAIL` 1, `UNKNOWN` 2, `OUT_OF_MODEL_SCOPE` 3. Every
-command: 64 usage error or a file in `--out-dir` the run did not write, 65 input that cannot
+`PASS`/`WARNING`/`NOT_APPLICABLE` 0, `FAIL` 1, `UNKNOWN` 2, `OUT_OF_MODEL_SCOPE` 3.
+`execution`: 0 completed, 1 partial or failed. A request refused as `OUT_OF_MODEL_SCOPE` exits
+3 (1 under `execution`); `validate` exits 1 for invalid input. Every command: 64 usage error or a file in `--out-dir` the run did not write, 65 input that cannot
 be simulated, 66 `project verify` found an inconsistent directory. `results targets` exits 0
 whenever it answers, including an unmet target.
 

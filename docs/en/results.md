@@ -88,11 +88,15 @@ A run whose return-light analysis reaches `max_return_analysis_work` in the Proj
 stay `UNKNOWN` and the run is `PARTIAL`, so it exits 3 under `requirements` and 2 under
 `aggregate`. Raise the limit to obtain those bounds.
 
+A valid request that states something outside the traced model is refused with status
+`OUT_OF_MODEL_SCOPE`: exit 3 under `requirements` and `aggregate`, 1 under `execution`.
+`validate` exits 1 for input that is not a valid request, under every contract.
+
 Every command uses 64 for a usage error, 65 for a Project or catalog that cannot be simulated
 as given and 66 when `project verify` finds an inconsistent run directory. Ctrl+C stops a run
-with exit 130 and leaves `run_stopped.json` in place of a run. A run never replaces a file it
-did not write: a file of yours under a run-file name in `--out-dir` stops it with exit 64 and
-stays unchanged.
+with exit 130 and leaves `run_stopped.json` in place of the run; your other files, and a
+`project.json` beside the run, are kept. A run never replaces a file it did not write: a file
+of yours under a run-file name in `--out-dir` stops it with exit 64 and stays unchanged.
 
 The read command `results targets` exits 0 when it answers, including an unmet target.
 `results freshness` uses 0 for `CURRENT`, 1 for `HISTORICAL` and 2 for `UNDETERMINED`.
@@ -135,7 +139,7 @@ os-optics results metrics --name waist_distance_x_mm
 
 Exports include monitors, arrivals, rays, paths, segments, power budgets, superpositions, wavefronts, irradiance, and metric definitions. Use `export --help` for formats and selectors. Wavefront exports use traced optical-path differences; irradiance maps use the paraxial Gaussian superposition model.
 
-## Analyses derived from a run
+## Further optical analyses
 
 ```bash
 os-optics project example --kind focus > focus.json
@@ -152,9 +156,9 @@ evidence, the models used with their validity checks, and a completeness stateme
 
 | Command | Analysis |
 | --- | --- |
-| `results focal-field RUN --request FILE` | Vector focal field of an ideal aplanatic objective at any numerical aperture |
+| `results focal-field --request FILE [RUN --monitor ID]` | Vector focal field of an ideal aplanatic objective at any numerical aperture; with a run, lit by the beams at that plane |
 | `results field RUN --monitor ID` | Coherent field of a sampled-field or speckle source: irradiance, power and speckle contrast |
-| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | Stability, eigenmode and resonances of a linear cavity, and the build-up of light injected through a mirror |
+| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | Stability, eigenmode and resonances of a linear cavity in a Project, and the build-up of light injected through a mirror |
 | `results configurations RUN` | The configurations of a Project with `configurations`, side by side; each runs into `RUN/configurations/ID` |
 
 `os-optics schema focal-field-request` prints the request schema. An analysis exits 0 when it

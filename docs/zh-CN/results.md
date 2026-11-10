@@ -80,10 +80,13 @@ JSON 摘要在 `exit_contract` 中注明所用规则。无法修改命令行的�
 `RETURN_ANALYSIS_BUDGET`：依赖该分析的上界保持 `UNKNOWN`，运行为 `PARTIAL`，因此在
 `requirements` 下退出码为 3，在 `aggregate` 下为 2。提高该限额即可得到这些上界。
 
+有效请求若声明了追迹模型之外的内容，会以状态 `OUT_OF_MODEL_SCOPE` 被拒绝：在 `requirements` 和
+`aggregate` 下退出码为 3，在 `execution` 下为 1。对于不是有效请求的输入，`validate` 在任何规则下都以 1 退出。
+
 所有命令中，64 表示用法错误，65 表示 Project 或目录无法按给定内容仿真，66 表示 `project verify`
-发现运行目录不一致。按 Ctrl+C 停止运行时退出码为 130，目录中只留下 `run_stopped.json`，不包含运行结果。
-运行不会覆盖不是由它写入的文件：`--out-dir` 中与运行文件同名的用户文件会使运行以退出码 64 停止，
-该文件保持不变。
+发现运行目录不一致。按 Ctrl+C 停止运行时退出码为 130，`run_stopped.json` 取代该次运行结果；
+你的其他文件以及运行旁的 `project.json` 都会保留。运行不会覆盖不是由它写入的文件：`--out-dir` 中
+与运行文件同名的用户文件会使运行以退出码 64 停止，该文件保持不变。
 
 `results targets` 成功返回时退出码为 0，即使目标未满足；`results freshness` 的退出码
 0、1、2 分别表示 `CURRENT`、`HISTORICAL`、`UNDETERMINED`。科学任务是否完成应依据结构化
@@ -123,7 +126,7 @@ os-optics results metrics --name waist_distance_x_mm
 
 可导出的内容包括观测面、到达光束、光线、路径、路径分段、功率收支、叠加结果、波前、辐照度和指标定义。使用 `export --help` 查看格式与筛选参数。波前导出采用追迹光程差，辐照度图采用近轴高斯光束叠加模型。
 
-## 基于运行的分析
+## 其他光学分析
 
 ```bash
 os-optics project example --kind focus > focus.json
@@ -138,9 +141,9 @@ os-optics results ghosts run-focus --monitor focal_plane
 
 | 命令 | 分析内容 |
 | --- | --- |
-| `results focal-field RUN --request FILE` | 任意数值孔径下理想齐明物镜的矢量焦场 |
+| `results focal-field --request FILE [RUN --monitor ID]` | 任意数值孔径下理想齐明物镜的矢量焦场；给出运行时，以该平面上的光束照明 |
 | `results field RUN --monitor ID` | 采样场或散斑光源的相干场：辐照度、功率和散斑对比度 |
-| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | 线性谐振腔的稳定性、本征模和谐振，以及经腔镜注入光的共振增强 |
+| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | Project 中线性谐振腔的稳定性、本征模和谐振，以及经腔镜注入光的共振增强 |
 | `results configurations RUN` | 含 `configurations` 的 Project 各配置并列比较；每个配置运行到 `RUN/configurations/ID` |
 
 `os-optics schema focal-field-request` 输出请求文件的结构定义。分析完成时退出码为 0；有物理量超出其模型

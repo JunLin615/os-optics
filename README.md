@@ -38,7 +38,7 @@ describes os-optics **0.13.0**, the release recorded in [engine-baseline.json](e
 - **Local computation:** run on Windows, macOS, or Linux with Python 3.11+.
 - **Reproducible projects:** preserve engine identity, catalog versions, numerical settings, and result hashes.
 - **Scientific outputs:** examine observation planes, beam states, ray paths, power budgets, and wavefront data.
-- **Analyses from a run:** vector focal fields, point spread function and MTF, ghost images, cavity modes, and several configurations of one design side by side.
+- **Optical analyses:** vector focal fields, point spread function and MTF, ghost images, cavity modes, and several configurations of one design side by side.
 - **Python and CLI:** integrate into notebooks, scripts, parameter studies, and agent workflows.
 - **Connected hardware workflow:** continue from local design to purchasing and assembly through OpenSci.
 
