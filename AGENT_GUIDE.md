@@ -7,12 +7,12 @@ OS Optics simulates optical designs locally: PyPI `os-optics`, command `os-optic
 ## Install and check
 
 ```bash
-python -m pip install "os-optics[protected]==0.12.0"
+python -m pip install "os-optics[protected]==0.13.0"
 os-optics doctor
 os-optics catalog sync
 ```
 
-Python 3.11+. This guide describes 0.12.0, recorded in [engine-baseline.json](engine-baseline.json).
+Python 3.11+. This guide describes 0.13.0, recorded in [engine-baseline.json](engine-baseline.json).
 `os-optics <command> --help` and `os-optics capabilities` describe every command.
 
 ## Design, run, read
@@ -28,7 +28,11 @@ os-optics view run --no-browser --snapshot shots
 Edit with `os-optics project update project.json --ops ops.json -o revised.json`: all
 operations and the check pass, or nothing is written. `results freshness RUN --project P`
 says whether a saved run matches an edited Project. `results describe` and `export` read
-the scientific data without rerunning. Details: [results](docs/en/results.md).
+the scientific data without rerunning. Further analyses: `results imaging|ghosts|field RUN
+--monitor ID`, `results focal-field --request FILE [RUN --monitor ID]`, `project cavity
+PROJECT` and `results configurations RUN`.
+`project run` reports progress on stderr; Ctrl-C stops it (exit 130, `run_stopped.json`; other files are kept).
+Details: [results](docs/en/results.md).
 
 ## Tools, cases and skills
 
@@ -50,12 +54,24 @@ Read computation completion, quantity validity, optional target assessment and
 freshness separately. Target assessments are `MET`, `UNMET`, `INDETERMINATE` or
 `NOT_APPLICABLE`. Retain bounds and scope diagnostics: a bounded quantity is an
 interval, and an unrelated unavailable quantity does not invalidate every result.
-No configured target means no requirement was assessed. `project run` exits with the
-run status; `results targets` exits 0 whenever it answers, including an unmet target.
+No configured target means no requirement was assessed.
+
+`project run`, `workspace run` and `validate` exit by `--status-contract`, named as
+`exit_contract` in the run summary. Default `requirements`: 0 completed with every declared
+target `MET` (or none declared), 1 a target `UNMET`, 2 `INDETERMINATE` or `NOT_APPLICABLE`,
+3 the calculation did not complete (`PARTIAL`, including `RETURN_ANALYSIS_BUDGET`, or
+`FAILED`). `aggregate` (or `OS_OPTICS_STATUS_CONTRACT=aggregate`) exits by the run status:
+`PASS`/`WARNING`/`NOT_APPLICABLE` 0, `FAIL` 1, `UNKNOWN` 2, `OUT_OF_MODEL_SCOPE` 3.
+`execution`: 0 completed, 1 partial or failed. A request refused as `OUT_OF_MODEL_SCOPE` exits
+3 (1 under `execution`); `validate` exits 1 for invalid input. Every command: 64 usage error or a file in `--out-dir` the run did not write, 65 input that cannot
+be simulated, 66 `project verify` found an inconsistent directory. `results targets` exits 0
+whenever it answers, including an unmet target.
 
 Saved results retain their identities after edits. Freshness reasons identify
 physical, target or computation-budget changes. Inspect older results as historical
-evidence and rerun when the task needs the edited design. Hash checks establish
+evidence and rerun when the task needs the edited design. A run made by 0.12.0 reads
+`HISTORICAL` (`ENGINE_CHANGED`) and `project verify` reports it `INCONSISTENT`; run the
+Project again with 0.13.0. Hash checks establish
 artifact consistency; analytical or experimental checks establish other claims.
 Purchasing eligibility is reported by the commercial operation separately.
 

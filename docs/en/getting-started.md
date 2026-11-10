@@ -54,7 +54,7 @@ os-optics project run project.json --out-dir run
 os-optics project verify run
 ```
 
-The run command writes the result and its supporting artifacts into `run`. Start with `manifest.json` for the overall status and target outcomes. See the [results guide](results.md) for individual files and status meanings.
+The run command writes the result and its supporting artifacts into `run`, reporting its progress in the terminal; Ctrl+C stops it. It exits 0 when the calculation completes and every target is met (see [exit codes](results.md#exit-codes)). Start with `manifest.json` for the overall status and target outcomes. See the [results guide](results.md) for individual files and status meanings.
 
 ## 4. Explore the scene
 
@@ -79,7 +79,7 @@ os-optics export arrivals run --format csv --out arrivals.csv
 os-optics schema project
 ```
 
-OS Optics 0.12.0 includes semantic edits and compact reads; see
+OS Optics 0.13.0 includes semantic edits and compact reads; see
 [version matching](installation.md#match-the-documentation-to-the-installed-version) for the
 matching installation.
 Save edit operations as `ops.json`, for example `set_component_pose` with an `instance_id`

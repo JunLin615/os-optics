@@ -53,7 +53,7 @@ os-optics project run project.json --out-dir run
 os-optics project verify run
 ```
 
-运行结果和相关文件保存在 `run` 目录。先阅读 `manifest.json` 中的整体状态和目标结果，再通过[结果指南](results.md)了解各文件与状态含义。
+运行结果和相关文件保存在 `run` 目录，运行进度显示在终端中，按 Ctrl+C 可停止运行。计算完成且所有目标均满足时退出码为 0（见[退出码](results.md#退出码)）。先阅读 `manifest.json` 中的整体状态和目标结果，再通过[结果指南](results.md)了解各文件与状态含义。
 
 ## 4. 查看三维光路
 
@@ -78,7 +78,7 @@ os-optics export arrivals run --format csv --out arrivals.csv
 os-optics schema project
 ```
 
-OS Optics 0.12.0 提供语义编辑与精简结果读取；匹配的安装方式见
+OS Optics 0.13.0 提供语义编辑与精简结果读取；匹配的安装方式见
 [版本匹配说明](installation.md#让文档与安装版本一致)。将编辑操作保存为 `ops.json`，例如带
 `instance_id` 和 `position_mm` 的 `set_component_pose`（`os-optics project update --help`
 列出全部操作），然后保留原始 Project，运行修改后的设计：
