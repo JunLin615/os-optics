@@ -27,7 +27,7 @@ os-optics project verify run
 
 ## 理解结果
 
-以下精简控制接口对应 0.12.0；请按
+以下精简控制接口对应 0.13.0；请按
 [版本匹配说明](installation.md#让文档与安装版本一致)安装匹配的软件包。
 
 当某个科学量超出元件模型声明的波长、角度或光束范围时，依赖它的目标判定为 `INDETERMINATE`，
@@ -56,12 +56,34 @@ os-optics results freshness run --project project.json
 有界量应保留为区间；如果区间无法确定比较结果，目标应保留为无法判定。
 
 物理参数或计算预算修改会报告 `PHYSICS_CHANGED`，仅修改目标会报告 `TARGETS_CHANGED`。
-保留原始运行及其哈希。修改目标不会把旧判定变成新判定。只要 Project 与转换后的引擎输入一致，
+保留原始运行及其哈希。修改目标不会把旧判定变成新判定。较早引擎版本生成且输入不同的运行报告为
+`HISTORICAL`，原因为 `ENGINE_CHANGED`。只要 Project 与转换后的引擎输入一致，
 其他引擎构建生成的运行仍可能为 `CURRENT`；复现时还应查看 `engine_build_matches`。
 详见 os-optics-kit 中的[比较工作流程](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#compare-and-freshness)。
 
 `project verify` 检查记录中的文件哈希及一致性，不会与独立光学解或实验进行比较。
 完整案例中的解析参考提供单独的校验，并注明适用假设。
+
+## 退出码
+
+`project run`、`workspace run` 和 `validate` 通过 `--status-contract` 选择退出码规则；运行的
+JSON 摘要在 `exit_contract` 中注明所用规则。无法修改命令行的脚本可通过环境变量
+`OS_OPTICS_STATUS_CONTRACT` 设置。
+
+| 规则 | 0 | 1 | 2 | 3 |
+| --- | --- | --- | --- | --- |
+| `requirements`（默认） | 计算完成，所有已声明目标均为 `MET`（或未声明目标） | 有目标为 `UNMET` | 有目标为 `INDETERMINATE` 或 `NOT_APPLICABLE` | 计算未完成（`PARTIAL` 或 `FAILED`） |
+| `aggregate` | `PASS`、`WARNING` 或 `NOT_APPLICABLE` | `FAIL` | `UNKNOWN` | `OUT_OF_MODEL_SCOPE` |
+| `execution` | 计算完成 | 部分完成或失败 | | |
+
+回返光分析达到 Project `compute_budget` 中的 `max_return_analysis_work` 时，运行报告
+`RETURN_ANALYSIS_BUDGET`：依赖该分析的上界保持 `UNKNOWN`，运行为 `PARTIAL`，因此在
+`requirements` 下退出码为 3，在 `aggregate` 下为 2。提高该限额即可得到这些上界。
+
+所有命令中，64 表示用法错误，65 表示 Project 或目录无法按给定内容仿真，66 表示 `project verify`
+发现运行目录不一致。按 Ctrl+C 停止运行时退出码为 130，目录中只留下 `run_stopped.json`，不包含运行结果。
+运行不会覆盖不是由它写入的文件：`--out-dir` 中与运行文件同名的用户文件会使运行以退出码 64 停止，
+该文件保持不变。
 
 `results targets` 成功返回时退出码为 0，即使目标未满足；`results freshness` 的退出码
 0、1、2 分别表示 `CURRENT`、`HISTORICAL`、`UNDETERMINED`。科学任务是否完成应依据结构化
@@ -100,6 +122,29 @@ os-optics results metrics --name waist_distance_x_mm
 ```
 
 可导出的内容包括观测面、到达光束、光线、路径、路径分段、功率收支、叠加结果、波前、辐照度和指标定义。使用 `export --help` 查看格式与筛选参数。波前导出采用追迹光程差，辐照度图采用近轴高斯光束叠加模型。
+
+## 基于运行的分析
+
+```bash
+os-optics project example --kind focus > focus.json
+os-optics project run focus.json --out-dir run-focus
+os-optics results imaging run-focus --monitor focal_plane
+os-optics results ghosts run-focus --monitor focal_plane
+```
+
+`results imaging` 给出像面上每个视场的点扩散函数、MTF 和环围能量；`results ghosts` 列出透镜和窗口
+表面反射形成的鬼像，并给出未列出鬼像光功率的上界。每条命令输出一个 `opensci.analysis_result`
+文档：各物理量及其状态、区间和收敛依据，所用模型及其有效性检查，以及完整性说明。
+
+| 命令 | 分析内容 |
+| --- | --- |
+| `results focal-field RUN --request FILE` | 任意数值孔径下理想齐明物镜的矢量焦场 |
+| `results field RUN --monitor ID` | 采样场或散斑光源的相干场：辐照度、功率和散斑对比度 |
+| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | 线性谐振腔的稳定性、本征模和谐振，以及经腔镜注入光的共振增强 |
+| `results configurations RUN` | 含 `configurations` 的 Project 各配置并列比较；每个配置运行到 `RUN/configurations/ID` |
+
+`os-optics schema focal-field-request` 输出请求文件的结构定义。分析完成时退出码为 0；有物理量超出其模型
+有效范围时为 2（原因记录在 JSON 中）；请求被拒绝时为 1。
 
 Python 调用方式：
 

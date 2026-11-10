@@ -27,7 +27,7 @@ os-optics project verify run
 
 ## Interpret the result
 
-These compact controls are available in 0.12.0; install the matching package as
+These compact controls are available in 0.13.0; install the matching package as
 described in [version matching](installation.md#match-the-documentation-to-the-installed-version).
 
 When a quantity lies outside a component model's declared wavelength, angle or beam
@@ -61,13 +61,38 @@ when its interval cannot determine the requested comparison.
 
 A physical or computation-budget edit is reported as `PHYSICS_CHANGED`; a target-only
 edit as `TARGETS_CHANGED`. Preserve the original run and its hashes. Changing targets
-does not turn an old target assessment into a new one. Another engine build can leave a
+does not turn an old target assessment into a new one. A run made by an earlier engine
+release whose input differs reads `HISTORICAL` with `ENGINE_CHANGED`. Another engine build can leave a
 run `CURRENT` when both Project and lowered input match; inspect `engine_build_matches`
 when reproducing the calculation. See the [comparison recipes](https://github.com/JunLin615/os-optics-kit/blob/main/docs/workflow-recipes.md#compare-and-freshness) in os-optics-kit.
 
 `project verify` checks recorded artifact hashes and consistency. It does not compare
 the calculation with an independent optical solution or an experiment. The analytical
 references in the worked cases provide separate checks with stated assumptions.
+
+## Exit codes
+
+`project run`, `workspace run` and `validate` choose their exit code with
+`--status-contract`; the JSON summary of a run names the contract it used as `exit_contract`.
+The environment variable `OS_OPTICS_STATUS_CONTRACT` sets the contract for scripts whose
+command line you cannot change.
+
+| Contract | 0 | 1 | 2 | 3 |
+| --- | --- | --- | --- | --- |
+| `requirements` (default) | Calculation completed, every declared target `MET` (or no targets) | A target `UNMET` | A target `INDETERMINATE` or `NOT_APPLICABLE` | Calculation did not complete (`PARTIAL` or `FAILED`) |
+| `aggregate` | `PASS`, `WARNING` or `NOT_APPLICABLE` | `FAIL` | `UNKNOWN` | `OUT_OF_MODEL_SCOPE` |
+| `execution` | Calculation completed | Partial or failed | | |
+
+A run whose return-light analysis reaches `max_return_analysis_work` in the Project's
+`compute_budget` reports `RETURN_ANALYSIS_BUDGET`: the bounds that depend on that analysis
+stay `UNKNOWN` and the run is `PARTIAL`, so it exits 3 under `requirements` and 2 under
+`aggregate`. Raise the limit to obtain those bounds.
+
+Every command uses 64 for a usage error, 65 for a Project or catalog that cannot be simulated
+as given and 66 when `project verify` finds an inconsistent run directory. Ctrl+C stops a run
+with exit 130 and leaves `run_stopped.json` in place of a run. A run never replaces a file it
+did not write: a file of yours under a run-file name in `--out-dir` stops it with exit 64 and
+stays unchanged.
 
 The read command `results targets` exits 0 when it answers, including an unmet target.
 `results freshness` uses 0 for `CURRENT`, 1 for `HISTORICAL` and 2 for `UNDETERMINED`.
@@ -109,6 +134,32 @@ os-optics results metrics --name waist_distance_x_mm
 ```
 
 Exports include monitors, arrivals, rays, paths, segments, power budgets, superpositions, wavefronts, irradiance, and metric definitions. Use `export --help` for formats and selectors. Wavefront exports use traced optical-path differences; irradiance maps use the paraxial Gaussian superposition model.
+
+## Analyses derived from a run
+
+```bash
+os-optics project example --kind focus > focus.json
+os-optics project run focus.json --out-dir run-focus
+os-optics results imaging run-focus --monitor focal_plane
+os-optics results ghosts run-focus --monitor focal_plane
+```
+
+`results imaging` gives the point spread function, MTF and encircled energy of every field
+at an image plane; `results ghosts` lists the ghost images formed by reflections at lens and
+window faces, with a bound on the light of the ghosts not listed. Each prints an
+`opensci.analysis_result` document: quantities with their state, interval and convergence
+evidence, the models used with their validity checks, and a completeness statement.
+
+| Command | Analysis |
+| --- | --- |
+| `results focal-field RUN --request FILE` | Vector focal field of an ideal aplanatic objective at any numerical aperture |
+| `results field RUN --monitor ID` | Coherent field of a sampled-field or speckle source: irradiance, power and speckle contrast |
+| `project cavity PROJECT --components M1 M2 --wavelength-nm NM` | Stability, eigenmode and resonances of a linear cavity, and the build-up of light injected through a mirror |
+| `results configurations RUN` | The configurations of a Project with `configurations`, side by side; each runs into `RUN/configurations/ID` |
+
+`os-optics schema focal-field-request` prints the request schema. An analysis exits 0 when it
+completes, 2 when a quantity lies outside its model's validity (the reason is in the JSON)
+and 1 when the request is refused.
 
 From Python:
 

@@ -6,11 +6,11 @@ OS Optics 支持 Windows、macOS 和 Linux，要求 **Python 3.11 及以上版�
 
 ## 让文档与安装版本一致
 
-本文档对应 os-optics **0.12.0**，该版本记录在 [engine-baseline.json](../../engine-baseline.json)。
+本文档对应 os-optics **0.13.0**，该版本记录在 [engine-baseline.json](../../engine-baseline.json)。
 请在全新环境中安装该精确版本：
 
 ```bash
-python -m pip install "os-optics[protected]==0.12.0"
+python -m pip install "os-optics[protected]==0.13.0"
 ```
 
 `os-optics doctor` 显示已安装版本。[os-optics-kit](https://github.com/JunLin615/os-optics-kit)
@@ -90,7 +90,12 @@ uv tool upgrade os-optics
 之后使用 `os-optics` 命令和 `import os_optics`。以该名称通过 `uv tool` 安装的环境运行
 `uv tool install "os-optics[protected]"`，之后使用 `os-optics`。
 
-运行 `os-optics doctor` 查看已安装版本。需要固定本文档对应的版本时，安装 `"os-optics[protected]==0.12.0"`。
+升级到 0.13.0 时，Project 文件无需修改。0.12.0 生成的运行仍可读取：`os-optics results freshness`
+将其报告为 `HISTORICAL`（原因 `ENGINE_CHANGED`），`os-optics project verify` 将其目录报告为
+`INCONSISTENT`，因为 0.13.0 在每个引擎输入中记录了更多数值设置。用 0.13.0 重新运行各 Project，
+即可得到当前且可通过校验的运行。读取 `project run` 退出码的脚本请按 0.13.0 的[退出码](results.md#退出码)处理。
+
+运行 `os-optics doctor` 查看已安装版本。需要固定本文档对应的版本时，安装 `"os-optics[protected]==0.13.0"`。
 
 工具、案例和 Agent 技能是独立的软件包。`python -m pip install os-optics-kit` 将它们安装到同一环境中；该软件包声明了它支持的 os-optics 版本。
 
@@ -103,5 +108,6 @@ uv tool upgrade os-optics
 | doctor 显示 `DOWNLOAD_ON_FIRST_USE` | 运行 `os-optics catalog sync`，或开始使用目录创建设计 |
 | 目录下载失败 | 用 `os-optics catalog check` 检查连接；离线导入方式见[目录指南](catalog.md) |
 | 服务要求更新引擎 | 升级软件包、更新项目目录版本，重新运行设计后再提交 |
+| `project verify` 将 0.12.0 的运行报告为 `INCONSISTENT` | 用 0.13.0 重新运行该 Project |
 
 下一步：[运行第一个光学设计](getting-started.md)。

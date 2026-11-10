@@ -26,18 +26,19 @@
 | [`os-optics-kit`](https://github.com/JunLin615/os-optics-kit) | GitHub | 社区仓库：工具、案例、技能与贡献 |
 
 使用 `python -m pip install "os-optics[protected]"` 安装引擎。完整案例和工具见
-[os-optics-kit](https://github.com/JunLin615/os-optics-kit)。本文档对应 os-optics **0.12.0**，
+[os-optics-kit](https://github.com/JunLin615/os-optics-kit)。本文档对应 os-optics **0.13.0**，
 该版本记录在 [engine-baseline.json](engine-baseline.json) 中。
 
 ## 你可以做什么
 
 | 设计 | 仿真 | 分析 | 实现 |
 | --- | --- | --- | --- |
-| 查找光学元件，定义位置、光源和设计目标 | 追迹光线，传播高斯光束，计算偏振与干涉 | 查看三维光路、评估目标并导出科学数据 | 选择元件，获取硬件配置并订购 |
+| 查找光学元件，定义位置、光源和设计目标 | 追迹光线，传播高斯光束，计算偏振与干涉，分析成像质量、鬼像和谐振腔 | 查看三维光路、评估目标并导出科学数据 | 选择元件，获取硬件配置并订购 |
 
 - **本地计算**：支持 Windows、macOS 和 Linux，使用 Python 3.11 及以上版本。
 - **可复现项目**：记录引擎标识、目录版本、数值设置和结果哈希。
 - **科学结果**：读取观测平面、光束状态、光线路径、功率收支和波前数据。
+- **基于运行的分析**：矢量焦场、点扩散函数与 MTF、鬼像、谐振腔模式，以及同一设计多个配置的并列比较。
 - **Python 与命令行**：接入 Notebook、脚本、参数研究和 Agent 工作流。
 - **连接真实硬件**：通过 OpenSci，从本地设计继续进入采购与装配流程。
 

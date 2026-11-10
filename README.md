@@ -27,17 +27,18 @@ When a design is ready, continue to [OpenSci](https://opensci-optics.com/) for o
 
 Install the engine with `python -m pip install "os-optics[protected]"`. Browse worked cases
 and tools in [os-optics-kit](https://github.com/JunLin615/os-optics-kit). This documentation
-describes os-optics **0.12.0**, the release recorded in [engine-baseline.json](engine-baseline.json).
+describes os-optics **0.13.0**, the release recorded in [engine-baseline.json](engine-baseline.json).
 
 ## What you can do
 
 | Design | Simulate | Explore | Build |
 | --- | --- | --- | --- |
-| Find optics and define positions, sources, and targets | Trace rays, propagate Gaussian beams, and evaluate polarization and interference | Inspect a 3D scene, compare target values, and export scientific data | Select components and request a hardware configuration and order |
+| Find optics and define positions, sources, and targets | Trace rays, propagate Gaussian beams, evaluate polarization and interference, and analyze image quality, ghosts and cavities | Inspect a 3D scene, compare target values, and export scientific data | Select components and request a hardware configuration and order |
 
 - **Local computation:** run on Windows, macOS, or Linux with Python 3.11+.
 - **Reproducible projects:** preserve engine identity, catalog versions, numerical settings, and result hashes.
 - **Scientific outputs:** examine observation planes, beam states, ray paths, power budgets, and wavefront data.
+- **Analyses from a run:** vector focal fields, point spread function and MTF, ghost images, cavity modes, and several configurations of one design side by side.
 - **Python and CLI:** integrate into notebooks, scripts, parameter studies, and agent workflows.
 - **Connected hardware workflow:** continue from local design to purchasing and assembly through OpenSci.
 

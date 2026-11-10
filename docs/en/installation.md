@@ -6,12 +6,12 @@ OS Optics runs on Windows, macOS, and Linux with **Python 3.11 or newer**. Choos
 
 ## Match the documentation to the installed version
 
-This documentation describes os-optics **0.12.0**, the release recorded in
+This documentation describes os-optics **0.13.0**, the release recorded in
 [engine-baseline.json](../../engine-baseline.json). Install that exact version in a fresh
 environment:
 
 ```bash
-python -m pip install "os-optics[protected]==0.12.0"
+python -m pip install "os-optics[protected]==0.13.0"
 ```
 
 `os-optics doctor` reports the installed version. Each case in
@@ -93,7 +93,14 @@ Up to 0.9.0 the package was published as `opensci-engine` (command `opensci-engi
 Then use the `os-optics` command and `import os_optics`. A `uv tool` installation under the
 earlier name installs the new one with `uv tool install "os-optics[protected]"`, then uses `os-optics`.
 
-Run `os-optics doctor` to see the installed version. To pin the documented version, install `"os-optics[protected]==0.12.0"`.
+Projects need no change for 0.13.0. Runs made with 0.12.0 remain readable: they report
+`HISTORICAL` in `os-optics results freshness` (reason `ENGINE_CHANGED`), and
+`os-optics project verify` reports their directories `INCONSISTENT`, because 0.13.0 records
+additional numerical settings in every engine input. Run each Project again with 0.13.0 for
+a current run that verifies. Scripts that read the exit code of `project run` follow the
+[exit codes](results.md#exit-codes) of 0.13.0.
+
+Run `os-optics doctor` to see the installed version. To pin the documented version, install `"os-optics[protected]==0.13.0"`.
 
 Tools, cases and agent skills are a separate package. `python -m pip install os-optics-kit` installs them into the same environment; the package declares the os-optics releases it supports.
 
@@ -106,5 +113,6 @@ Tools, cases and agent skills are a separate package. `python -m pip install os-
 | `DOWNLOAD_ON_FIRST_USE` in doctor | Run `os-optics catalog sync` or start a catalog-based design |
 | Catalog download fails | Check connectivity with `os-optics catalog check`; offline catalog import is described in the [catalog guide](catalog.md) |
 | Service requests a newer engine | Upgrade, update the project's catalog, and rerun the design before submitting it |
+| `project verify` reports a 0.12.0 run `INCONSISTENT` | Run the Project again with 0.13.0 |
 
 Next: [Run your first optical design](getting-started.md).
