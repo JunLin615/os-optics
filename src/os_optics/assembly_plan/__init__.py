@@ -11,6 +11,7 @@ from __future__ import annotations
 from .contract import (PLAN_SCHEMA_ID, PLAN_SCHEMA_VERSION, AssemblyPlanContentV1, AssemblyPlanError, AssemblyPlanErrorCode,
                        AssemblyPlanOpV1, AssemblyPlanRevisionV1, EditRequestV1, FindingV1, HistoryLineV1, PlanStatusV1,
                        build_revision, plan_content_digest, plan_json_schema)
+from .mechanical import MechanicalCatalogError, MechanicalSources, PublicMechanicalCatalogV1, load_mechanical_catalog
 
 __all__ = [
     "PLAN_SCHEMA_ID",
@@ -23,8 +24,12 @@ __all__ = [
     "EditRequestV1",
     "FindingV1",
     "HistoryLineV1",
+    "MechanicalCatalogError",
+    "MechanicalSources",
     "PlanStatusV1",
+    "PublicMechanicalCatalogV1",
     "build_revision",
+    "load_mechanical_catalog",
     "plan_content_digest",
     "plan_json_schema",
 ]
