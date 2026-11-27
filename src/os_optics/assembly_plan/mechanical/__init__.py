@@ -1,0 +1,65 @@
+"""The public mechanical catalog (``opensci.public_mechanical_catalog`` 1.0) a local assembly plan selects hardware from.
+
+Pure: documents arrive as bytes (``load_mechanical_catalog``, ``load_mechanical_document``) and the set one command
+uses is a ``MechanicalSources``. Reading the local store, ``--mechanical`` files and ``OS_OPTICS_MECHANICAL_CATALOG``
+is ``os_optics.catalog.mechanical.resolve_sources`` (reached through ``os_optics.local.catalog.mechanical_sources``).
+"""
+
+from .model import (
+    FACT_BASES,
+    IDENTITY_MODELS,
+    MECHANICAL_CATALOG_SCHEMA_ID,
+    MECHANICAL_CATALOG_SCHEMA_VERSION,
+    MECHANICAL_PART_FRAMES,
+    PARAM_KEYS,
+    SUPPORTED_MECHANICAL_SCHEMA_VERSIONS,
+    BoxV1,
+    BreadboardIdentityV1,
+    ForkBaseV1,
+    IdentityProfileV1,
+    LoadedMechanicalDocument,
+    MechanicalCatalogError,
+    MechanicalCatalogManifestV1,
+    MechanicalDocumentRefV1,
+    MechanicalErrorCode,
+    MechanicalIdentityBaseV1,
+    MechanicalIdentityV1,
+    MechanicalKindV1,
+    MechanicalPlanBinding,
+    MechanicalReleaseEntryV1,
+    MechanicalSourceKind,
+    MechanicalSources,
+    MechanismKindV1,
+    MountHoldsV1,
+    MountIdentityV1,
+    MountKindV1,
+    MountMechanismV1,
+    OpticShapeV1,
+    PostFasteningV1,
+    PostHolderIdentityV1,
+    PostIdentityV1,
+    PublicBasisV1,
+    PublicMechanicalCatalogV1,
+    PublicResolverPolicyV1,
+    VisualPrimitiveV1,
+    canonical_mechanical_bytes,
+    canonical_visual,
+    load_mechanical_catalog,
+    load_mechanical_document,
+    mechanical_catalog_json_schema,
+    mechanical_content_digest,
+    seal_mechanical_document,
+    weakest_basis,
+)
+
+__all__ = [
+    "FACT_BASES", "IDENTITY_MODELS", "MECHANICAL_CATALOG_SCHEMA_ID", "MECHANICAL_CATALOG_SCHEMA_VERSION",
+    "MECHANICAL_PART_FRAMES", "PARAM_KEYS", "SUPPORTED_MECHANICAL_SCHEMA_VERSIONS", "BoxV1", "BreadboardIdentityV1", "ForkBaseV1", "IdentityProfileV1",
+    "LoadedMechanicalDocument", "MechanicalCatalogError", "MechanicalCatalogManifestV1", "MechanicalDocumentRefV1",
+    "MechanicalErrorCode", "MechanicalIdentityBaseV1", "MechanicalIdentityV1", "MechanicalKindV1", "MechanicalPlanBinding",
+    "MechanicalReleaseEntryV1", "MechanicalSourceKind", "MechanicalSources", "MechanismKindV1", "MountHoldsV1",
+    "MountIdentityV1", "MountKindV1", "MountMechanismV1", "OpticShapeV1", "PostFasteningV1", "PostHolderIdentityV1",
+    "PostIdentityV1", "PublicBasisV1", "PublicMechanicalCatalogV1", "PublicResolverPolicyV1", "VisualPrimitiveV1",
+    "canonical_mechanical_bytes", "canonical_visual", "load_mechanical_catalog", "load_mechanical_document",
+    "mechanical_catalog_json_schema", "mechanical_content_digest", "seal_mechanical_document", "weakest_basis",
+]
