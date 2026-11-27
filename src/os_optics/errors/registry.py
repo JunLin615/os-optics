@@ -79,6 +79,9 @@ PRESCRIPTION = "os_optics.prescription.errors:PrescriptionErrorCode"
 DRAWING = "os_optics.assembly_drawing.errors:DrawingErrorCode"
 LAYOUT = "os_optics.optical_layout.generate:OpticalLayoutErrorCode"
 MESH = "os_optics.assembly.mesh:MeshErrorCode"
+MECHANICAL = "os_optics.assembly_plan.mechanical.model:MechanicalErrorCode"
+PLAN = "os_optics.assembly_plan.contract:AssemblyPlanErrorCode"
+PLAN_OP = "os_optics.assembly_plan.contract:PlanOpErrorCode"
 
 #: Every code vocabulary of the Engine (a ``StrEnum`` whose name ends in ``Code``).
 VOCABULARIES: tuple[Vocabulary, ...] = (
@@ -96,6 +99,9 @@ VOCABULARIES: tuple[Vocabulary, ...] = (
     Vocabulary(DRAWING, "assembly drawing", (A,)),
     Vocabulary(LAYOUT, "optical layout drawing", (A,)),
     Vocabulary(MESH, "assembly mesh", (A,)),
+    Vocabulary(MECHANICAL, "mechanical catalog", (A,)),
+    Vocabulary(PLAN, "assembly plan", (A,)),
+    Vocabulary(PLAN_OP, "assembly plan", (A,)),
 )
 
 #: Every exception class defined in the Engine.
@@ -146,6 +152,8 @@ EXCEPTIONS: tuple[Raised, ...] = (
     Raised("os_optics.assembly_drawing.sheet:LayoutError", "assembly drawing", A),
     Raised("os_optics.optical_layout.generate:OpticalLayoutError", "optical layout drawing", A, LAYOUT),
     Raised("os_optics.assembly.mesh:MeshError", "assembly mesh", A, MESH),
+    Raised("os_optics.assembly_plan.mechanical.model:MechanicalCatalogError", "mechanical catalog", A, MECHANICAL),
+    Raised("os_optics.assembly_plan.contract:AssemblyPlanError", "assembly plan", A, PLAN),
     Raised("os_optics.optical_view.builder:OpticalViewBindingError", "optical view", A),
     Raised("os_optics.optical_view.glb:GlbFormatError", "optical view", A),
     Raised("os_optics.optical_view.section:SectionError", "optical view", A),
@@ -190,6 +198,12 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "OPTIONS_INVALID": (NETWORK, PRESCRIPTION),
     "INPUT_INVALID": (DRAWING, LAYOUT),
     "LAYOUT_DOES_NOT_FIT": (DRAWING, LAYOUT),
+    "BASE_CHANGED": (COMPOSITION, PLAN),
+    "OP_ID_REUSED": (COMPOSITION, PLAN),
+    "MECHANICAL_CATALOG_INVALID": (MECHANICAL, PLAN),
+    "MECHANICAL_CATALOG_NOT_AVAILABLE": (MECHANICAL, PLAN),
+    "MECHANICAL_IDENTITY_DUPLICATE": (MECHANICAL, PLAN),
+    "MECHANICAL_SCHEMA_UNSUPPORTED": (MECHANICAL, PLAN),
 }
 
 #: The codes of ``ErrorCode`` an ``EngineInputError`` is raised with for an input that violates the request contract
