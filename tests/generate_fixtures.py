@@ -3,6 +3,7 @@
     python tests/generate_fixtures.py            # requests + snapshots
     python tests/generate_fixtures.py --freeze   # additionally rewrite contract_freeze.json (refused without a SCHEMA_VERSION bump)
     python tests/generate_fixtures.py --freeze --unreleased   # re-record it within a SCHEMA_VERSION no release has published
+    python tests/generate_fixtures.py mechanical # only tests/fixtures/mechanical/*.json (mechanical_fixture.py)
 
 The request files are the shared inputs of the native tests, the CLI test and the Pyodide parity harness. The snapshot files are
 regression snapshots of the engine's own output (independent physical verification lives in the golden tests, not here).
@@ -117,7 +118,18 @@ def write_freeze_baseline(unreleased: bool = False) -> None:
     print("wrote contract_freeze.json for schema", SCHEMA_VERSION)
 
 
+def write_mechanical_fixtures() -> None:
+    """The synthetic public mechanical catalog fixtures (``mechanical_fixture.py``; osc1 canonical bytes)."""
+    from mechanical_fixture import write_fixtures
+
+    for path in write_fixtures():
+        print("wrote", path.relative_to(HERE).as_posix())
+
+
 def main() -> None:
+    if "mechanical" in sys.argv[1:]:
+        write_mechanical_fixtures()
+        return
     REQ_DIR.mkdir(parents=True, exist_ok=True)
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
     for name, factory in FIXTURES.items():
