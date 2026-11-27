@@ -11,7 +11,7 @@ This documentation describes os-optics **0.14.0**, the release recorded in
 environment:
 
 ```bash
-python -m pip install "os-optics[protected]==0.14.0"
+python -m pip install "os-optics==0.14.0"
 ```
 
 `os-optics doctor` reports the installed version. Each case in
@@ -41,27 +41,27 @@ On Windows PowerShell:
 Install and check the engine:
 
 ```bash
-python -m pip install "os-optics[protected]"
+python -m pip install os-optics
 os-optics doctor
 ```
 
-You can also run the CLI as `python -m os_optics`. If PowerShell activation is unavailable, use `.venv\Scripts\python.exe -m pip install "os-optics[protected]"` and `.venv\Scripts\python.exe -m os_optics doctor` directly.
+You can also run the CLI as `python -m os_optics`. If PowerShell activation is unavailable, use `.venv\Scripts\python.exe -m pip install os-optics` and `.venv\Scripts\python.exe -m os_optics doctor` directly.
 
-The `protected` extra adds support for opening assembly previews and assembly details in the hardware workflow. For optical design and simulation alone, `python -m pip install os-optics` is sufficient.
+The `protected` extra is optional; [Opening encrypted commercial deliveries](#opening-encrypted-commercial-deliveries) covers when it is needed.
 
 ## Standalone CLI with uv
 
 With [uv](https://docs.astral.sh/uv/) installed:
 
 ```bash
-uv tool install "os-optics[protected]"
+uv tool install os-optics
 os-optics doctor
 ```
 
 If the command is not on your PATH, run `uv tool update-shell` and open a new terminal. To run a command without a persistent tool installation:
 
 ```bash
-uvx --from "os-optics[protected]" os-optics doctor
+uvx --from os-optics os-optics doctor
 ```
 
 ## Prepare the catalog
@@ -78,7 +78,7 @@ The catalog downloads into a local store. Later simulations use stored releases,
 For a pip installation:
 
 ```bash
-python -m pip install --upgrade "os-optics[protected]"
+python -m pip install --upgrade os-optics
 ```
 
 For a uv tool installation:
@@ -89,9 +89,9 @@ uv tool upgrade os-optics
 
 Up to 0.9.0 the package was published as `opensci-engine` (command `opensci-engine`,
 `import opensci_engine`). An installation under that name takes the same
-`python -m pip install --upgrade "os-optics[protected]"`; the two packages share no files.
+`python -m pip install --upgrade os-optics`; the two packages share no files.
 Then use the `os-optics` command and `import os_optics`. A `uv tool` installation under the
-earlier name installs the new one with `uv tool install "os-optics[protected]"`, then uses `os-optics`.
+earlier name installs the new one with `uv tool install os-optics`, then uses `os-optics`.
 
 Projects need no change for 0.14.0. Runs made with 0.13.0 remain readable: they report
 `HISTORICAL` in `os-optics results freshness` (reason `ENGINE_CHANGED`), and
@@ -100,9 +100,23 @@ every engine input (engine schema 1.12.0). Run each Project again with 0.14.0 fo
 a current run that verifies. Scripts that read the exit code of `project run` follow the
 [exit codes](results.md#exit-codes) of 0.14.0.
 
-Run `os-optics doctor` to see the installed version. To pin the documented version, install `"os-optics[protected]==0.14.0"`.
+Run `os-optics doctor` to see the installed version. To pin the documented version, install `"os-optics==0.14.0"`.
 
 Tools, cases and agent skills are a separate package. `python -m pip install os-optics-kit` installs them into the same environment; the package declares the os-optics releases it supports.
+
+## Opening encrypted commercial deliveries
+
+The `protected` extra installs `cryptography`, which opens the AES-256-GCM envelope, and is needed only to open an
+encrypted Assembly Preview or Assembly Detail delivery of a commercial resolution:
+
+```bash
+python -m pip install "os-optics[protected]==0.14.0"
+uv tool install "os-optics[protected]==0.14.0"      # for a uv tool installation
+```
+
+Local design and simulation, the catalog, the 3D view, Local Validation and the local assembly check and drawing work
+without it. `os-optics doctor` reports `protected_extra.installed`; opening a delivery without the extra fails with
+`CRYPTO_UNAVAILABLE` and names the extra to install.
 
 ## Common setup questions
 

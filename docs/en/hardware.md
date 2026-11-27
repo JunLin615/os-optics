@@ -25,7 +25,7 @@ Start at the [OpenSci website](https://opensci-optics.com/). Your Account provid
 os-optics account status
 ```
 
-The `protected` extra from the [installation guide](installation.md) supports opening assembly previews and details.
+Opening an encrypted Assembly Preview or Assembly Detail of a commercial resolution needs the optional `protected` extra, described in the [installation guide](installation.md#opening-encrypted-commercial-deliveries).
 
 ## Get a configuration
 

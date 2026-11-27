@@ -3,7 +3,8 @@
 Checks that relative links and anchors resolve, that every English page has a Simplified
 Chinese page with the same heading structure, that both READMEs carry the four-name index
 and the install command on their first screen, that no stale repository name, retired host
-or moved path remains, that version pins match engine-baseline.json, and that
+or moved path remains, that version pins match engine-baseline.json, that the optional
+``os-optics[protected]`` extra is named only under a section that marks it optional, and that
 engine-baseline.json is well formed. Prints one compact JSON line; exit 0 = clean, 1 = problems.
 
     python scripts/check_docs.py
@@ -34,6 +35,11 @@ STALE = (
     (r"requirements-" + r"examples\.txt", "file moved to os-optics-kit"),
 )
 PAIRS = (("README.md", "README.zh-CN.md"),)
+# Plain ``os-optics`` is the default installation target; the ``protected`` extra exists for opening encrypted
+# commercial assembly deliveries, so a page names it only in a section whose heading says so. The spec is matched
+# case-insensitively, with ``_`` for ``-``, optional spaces, and any extra list around ``protected``.
+PROTECTED_SPEC = re.compile(r"os[-_]optics\s*\[\s*[^\]]*protected[^\]]*\]", re.I)
+OPTIONAL_SECTION = re.compile(r"optional|encrypted|protected|可选|加密", re.I)
 
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -136,6 +142,44 @@ def check_index(problems: list[str]) -> None:
             problems.append(f"{name}: install command missing before the first section")
 
 
+def sections(text: str):
+    """Every line with the title of its ATX section; a fenced block opens no section."""
+    title, fenced = "", False
+    for number, line in enumerate(text.splitlines(), 1):
+        if FENCE.match(line):
+            fenced = not fenced
+        elif not fenced and (found := HEADING.match(line)):
+            title = found.group(2)
+        yield number, line, title
+
+
+def balanced(text: str) -> bool:
+    """Whether every fenced block is closed, so the sections after it can be told apart."""
+    fenced = False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            fenced = not fenced
+    return not fenced
+
+
+def check_protected_extra(files: list[Path], problems: list[str]) -> None:
+    """``os-optics[protected]`` is named only under a section heading that marks the extra optional."""
+    for path in files:
+        if path.suffix != ".md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if not PROTECTED_SPEC.search(text.replace("\\", "")):
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        if not balanced(text):
+            problems.append(f"{rel}: unclosed code fence, so the sections after it cannot be checked")
+            continue
+        for number, line, title in sections(text):
+            if PROTECTED_SPEC.search(line.replace("\\", "")) and not OPTIONAL_SECTION.search(title):
+                problems.append(f"{rel}:{number}: os-optics[protected] outside a section that marks it optional "
+                                f"(section: {title or 'none'}): {line.strip()[:100]}")
+
+
 def check_baseline(problems: list[str]) -> dict:
     try:
         baseline = json.loads((ROOT / BASELINE).read_text(encoding="utf-8"))
@@ -183,6 +227,7 @@ def main() -> int:
             check_links(path, problems)
     check_pairs(problems)
     check_index(problems)
+    check_protected_extra(files, problems)
     check_content(files, baseline, problems)
     print(json.dumps({"status": "FAIL" if problems else "OK", "files": len(files),
                       "baseline": baseline.get("version"), "problems": problems},

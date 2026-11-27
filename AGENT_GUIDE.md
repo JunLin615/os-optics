@@ -7,13 +7,17 @@ OS Optics simulates optical designs locally: PyPI `os-optics`, command `os-optic
 ## Install and check
 
 ```bash
-python -m pip install "os-optics[protected]==0.14.0"
+python -m pip install "os-optics==0.14.0"
 os-optics doctor
 os-optics catalog sync
 ```
 
 Python 3.11+. This guide describes 0.14.0, recorded in [engine-baseline.json](engine-baseline.json).
 `os-optics <command> --help` and `os-optics capabilities` describe every command.
+
+The `protected` extra is optional: it adds only `cryptography`, for opening encrypted commercial
+Assembly Preview and Assembly Detail deliveries; install it as the
+[installation guide](docs/en/installation.md#opening-encrypted-commercial-deliveries) describes.
 
 ## Design, run, read
 

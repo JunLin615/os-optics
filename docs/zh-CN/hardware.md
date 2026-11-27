@@ -25,7 +25,7 @@
 os-optics account status
 ```
 
-[安装指南](installation.md)中的 `protected` 扩展支持打开装配预览和装配详情。
+打开商业方案的加密装配预览或装配详情需要可选扩展 `protected`，见[安装指南](installation.md#打开加密的商业交付)。
 
 ## 获取配置方案
 

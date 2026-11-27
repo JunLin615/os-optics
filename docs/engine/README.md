@@ -31,18 +31,18 @@ assembly detail after confirming receipt. The product site is <https://opensci-o
 With **uv** (it selects or downloads a compatible Python by itself):
 
 ```bash
-uv tool install "os-optics[protected]"
+uv tool install os-optics
 os-optics doctor
 ```
 
-or run without installing: `uvx --from "os-optics[protected]" os-optics doctor`.
+or run without installing: `uvx --from os-optics os-optics doctor`.
 
 With **pip**, in a virtual environment made from Python 3.11 or newer:
 
 ```bash
 python --version                                  # 3.11 or newer
 python -m venv .venv
-.venv/bin/python -m pip install "os-optics[protected]"     # Windows: .venv\Scripts\python -m pip install ...
+.venv/bin/python -m pip install os-optics                  # Windows: .venv\Scripts\python -m pip install ...
 .venv/bin/os-optics doctor                                      # Windows: .venv\Scripts\os-optics doctor
 ```
 
@@ -63,7 +63,7 @@ not accept is refused with `ENGINE_VERSION_NOT_ACCEPTED` (recovery `UPGRADE_ENGI
 saved Project to the current catalog and run it again:
 
 ```bash
-python -m pip install --upgrade "os-optics[protected]"
+python -m pip install --upgrade os-optics
 os-optics catalog sync
 os-optics project update-catalog project.json --out project.json   # its next_steps say what to do with each component
 os-optics project run project.json --out-dir run
@@ -84,9 +84,18 @@ commands for anything missing. The token itself is never shown. Doctor is local
 and offline: it does not contact OpenSci or test the connection (`os-optics catalog check` asks the catalog
 service, `os-optics account status` checks your token with the service). On a fresh install `catalog.status` is
 `DOWNLOAD_ON_FIRST_USE`, a warning, not a failure: the catalog is downloaded by the first command that needs it, or now
-with `os-optics catalog sync`. The `[protected]` extra
-is needed to open the Experimental Lab Assembly and the Assembly Detail of a resolution; the catalog, Projects,
-simulation, Local Validation and the 3D view work without it.
+with `os-optics catalog sync`.
+
+### The `protected` extra is optional
+
+Plain `os-optics` covers the local workflow: Projects, simulation, Local Validation, the 3D view, the local assembly
+check and drawing, and the catalog (downloaded on first use). The extra adds `cryptography`, which opens the
+AES-256-GCM envelope, and is needed only to open the encrypted Assembly Preview (Experimental Lab Assembly) and
+Assembly Detail deliveries of a commercial resolution:
+
+```bash
+python -m pip install "os-optics[protected]"      # uv: uv tool install "os-optics[protected]"
+```
 
 ### The public optical catalog: synchronized, versioned, offline-first
 
