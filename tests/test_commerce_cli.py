@@ -200,25 +200,17 @@ def test_the_commercial_flow_from_the_command_line(env, capsys, tmp_path, stub, 
     out_dir = tmp_path / "drawing"
     code, doc = cli("assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir))
     assert code == 0 and doc["delivery_ready"] is True and sorted(p.name for p in out_dir.iterdir()) == DRAWING_FILES
-    assert doc["upload"]["status"] == "UPLOADED" and "uploaded" not in doc
-    assert [doc["upload"][p]["artifact_kind"] for p in ("validation", "drawing")] == ["ASSEMBLY_LOCAL_VALIDATION", "ASSEMBLY_DRAWING"]
+    # drawings are never uploaded (#557): the summary has no upload block and no artifact set is posted
+    assert "upload" not in doc and not any(r["path"].endswith("/artifact-sets") for r in stub.state.requests)
     code, again = cli("assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir))  # regenerated: its own files replaced
-    assert code == 0 and all(again["upload"][part]["replayed"] for part in ("validation", "drawing"))
+    assert code == 0 and again["files"] == doc["files"]
     code, again = cli("assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir), "--overwrite")  # accepted
-    assert code == 0 and all(again["upload"][part]["replayed"] for part in ("validation", "drawing"))
+    assert code == 0 and "upload" not in again
     code, local_only = cli("assembly", "drawing", RESOLUTION_ID, "--out", str(tmp_path / "local"), "--no-upload")
-    assert code == 0 and local_only["upload"] == {"status": "NOT_REQUESTED"} and local_only["delivery_ready"] is True
+    assert code == 0 and "upload" not in local_only and local_only["delivery_ready"] is True  # (deprecated, no effect)
 
     code, listed = cli("artifacts", "list", RESOLUTION_ID)
-    assert code == 0 and len(listed["artifact_sets"]) == 2
-    set_id = doc["upload"]["drawing"]["artifact_set_id"]
-    code, shown = cli("artifacts", "show", set_id)
-    role = next(f for f in shown["files"] if f["filename"] == "assembly_drawing.svg")["role"]
-    target = tmp_path / "downloaded.svg"
-    code, downloaded = cli("artifacts", "download", set_id, role, "--out", str(target))
-    assert code == 0 and target.read_bytes() == (out_dir / "assembly_drawing.svg").read_bytes()
-    assert cli("artifacts", "download", set_id, role, "--out", str(target))[0] == 0  # the stored file again: replaced
-    assert target.read_bytes() == (out_dir / "assembly_drawing.svg").read_bytes()
+    assert code == 0 and listed["artifact_sets"] == [] and stub.state.artifact_sets == {}
     code, doc = cli("artifacts", "show", "00000000-0000-4000-8000-000000000999")
     assert code == 67 and doc["error"]["code"] == "ARTIFACT_SET_NOT_FOUND"
 
@@ -227,49 +219,7 @@ def test_the_commercial_flow_from_the_command_line(env, capsys, tmp_path, stub, 
     for secret in (AGENT, AGENT[37:], *grant_keys):
         assert secret not in text
     assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
-        ["agent-token", "downloaded.svg", "drawing", "home", "limited.json", "local", "run", "validation.json"])
-
-
-def test_an_upload_that_fails_leaves_the_drawing_written_and_reported(env, capsys, tmp_path, stub, monkeypatch):
-    """The drawing and its upload are two outcomes: when the upload is refused after the files are written, stdout holds
-    the drawing's summary (its own status, the files and where they are) with ``upload.status`` ``FAILED``, the error,
-    the part already stored and the retry command; the exit code is the upload error's; the retry stores nothing twice."""
-    from commerce_stub import Refusal
-
-    monkeypatch.setenv("OPENSCI_TOKEN_FILE", str(token_file(tmp_path / "agent-token", AGENT)))
-    assert run_cli(capsys, "order", "create", RESOLUTION_ID)[0] == 0
-    stub.state.confirm_payment()
-    out_dir = tmp_path / "drawing"
-    limited = {"limit": "MEMBER_UPLOADS_PER_HOUR", "retry_after_seconds": 1200}
-    # the validation upload passes; the drawing upload is refused (an upload limit: not repeated by the client)
-    stub.state.artifact_upload_refusals = [None, Refusal(429, "ARTIFACT_UPLOAD_RATE_LIMITED", "uploads are limited", limited,
-                                                         headers={"Retry-After": "1200"})]
-    code, doc, _ = run_cli(capsys, "assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir), "--locale", "zh-CN")
-    assert code == 69  # (recovery RETRY_LATER: the requested upload did not happen)
-    assert (doc["status"], doc["delivery_ready"], doc["locale"], doc["out"]) == ("DETAILED_ASSEMBLY_DRAWING", True, "zh-CN", str(out_dir))
-    assert sorted(p.name for p in out_dir.iterdir()) == DRAWING_FILES and set(doc["files"]) < set(DRAWING_FILES)
-    assert doc["validation"]["status"] in ("PASS", "WARNING") and "error" not in doc
-    upload = doc["upload"]
-    assert upload["status"] == "FAILED" and upload["error"]["code"] == "ARTIFACT_UPLOAD_RATE_LIMITED"
-    assert upload["error"]["recovery"] == "RETRY_LATER" and upload["error"]["retry_after_seconds"] == 1200
-    assert list(upload["uploaded"]) == ["validation"] and upload["uploaded"]["validation"]["artifact_kind"] == "ASSEMBLY_LOCAL_VALIDATION"
-    assert upload["retry"] == ["os-optics", "assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir), "--locale", "zh-CN"]
-    assert [s["artifact_kind"] for s in stub.state.artifact_sets.values()] == ["ASSEMBLY_LOCAL_VALIDATION"]
-    # the retry it names: the validation is replayed, the drawing stored; nothing twice
-    code, again, _ = run_cli(capsys, *upload["retry"][1:])
-    assert code == 0 and again["upload"]["status"] == "UPLOADED" and again["files"] == doc["files"]
-    assert (again["upload"]["validation"]["replayed"], again["upload"]["drawing"]["replayed"]) == (True, False)
-    assert again["upload"]["validation"]["artifact_set_id"] == upload["uploaded"]["validation"]["artifact_set_id"]
-    assert len(stub.state.artifact_sets) == 2
-    # nothing stored at all: the first upload refused
-    stub.state.artifact_upload_refusals = [Refusal(429, "ARTIFACT_UPLOAD_SUSPENDED", "uploads are paused",
-                                                   {"scope": "MEMBER", "retry_after_seconds": 60})]
-    code, none, _ = run_cli(capsys, "assembly", "drawing", RESOLUTION_ID, "--out", str(tmp_path / "second"))
-    assert code == 69 and none["upload"]["status"] == "FAILED" and none["upload"]["uploaded"] == {}
-    assert none["status"] == "DETAILED_ASSEMBLY_DRAWING" and sorted(p.name for p in (tmp_path / "second").iterdir()) == DRAWING_FILES
-    # a failure before any file is written is still the error document alone
-    code, early, _ = run_cli(capsys, "assembly", "drawing", "00000000-0000-4000-8000-00000000dead", "--out", str(tmp_path / "none"))
-    assert code != 0 and early["status"] == "ERROR" and "upload" not in early and not (tmp_path / "none").exists()
+        ["agent-token", "drawing", "home", "limited.json", "local", "run", "validation.json"])
 
 
 def test_a_diagnostic_sheet_of_a_resolution_is_written_and_exits_2(env, capsys, tmp_path, stub, monkeypatch):
@@ -294,7 +244,7 @@ def test_a_diagnostic_sheet_of_a_resolution_is_written_and_exits_2(env, capsys, 
     out_dir = tmp_path / "diagnostic"
     code, doc, _ = run_cli(capsys, "assembly", "drawing", RESOLUTION_ID, "--out", str(out_dir), "--no-upload")
     assert code == 2 and (doc["status"], doc["delivery_ready"]) == ("DIAGNOSTIC_VALIDATION_FAILED", False)
-    assert sorted(p.name for p in out_dir.iterdir()) == DRAWING_FILES and doc["upload"] == {"status": "NOT_REQUESTED"}
+    assert sorted(p.name for p in out_dir.iterdir()) == DRAWING_FILES and "upload" not in doc
 
 
 @pytest.mark.parametrize("command", [["assembly", "drawing"], ["assembly", "draw"]])
@@ -310,12 +260,12 @@ def test_both_drawing_commands_state_the_same_exit_codes_in_their_help(capsys, c
     assert text.count("65 = ") == 1 and "64 = " in text and "0 = done" not in text
 
 
-def test_the_drawing_help_states_the_two_outcomes(capsys):
+def test_the_drawing_help_states_that_nothing_is_uploaded_and_the_local_command(capsys):
     with pytest.raises(SystemExit):
         main(["assembly", "drawing", "--help"])
     text = " ".join(capsys.readouterr().out.split())
-    assert "the upload as its own outcome: upload.status UPLOADED" in text and "NOT_REQUESTED with --no-upload" in text
-    assert "an upload that fails exits with its error's code after the summary is printed" in text
+    assert "nothing is uploaded (drawings stay on this device; --no-upload is accepted and has no effect)" in text
+    assert "assembly plan draw PLAN --out DIR" in text and "upload.status" not in text
 
 
 def test_a_service_that_cannot_be_reached_exits_69(env, capsys, monkeypatch, tmp_path):

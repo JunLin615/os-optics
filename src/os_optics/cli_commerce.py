@@ -23,8 +23,14 @@ a command-line value. Every command prints one JSON document on stdout; a refusa
   --out-dir``) for commercial resolution with the chosen order options (``--optics-only`` / ``--no-breadboard`` /
   ``--assembly-service`` are the same options as presets); components OpenSci does not supply (and the ones marked
   ``--customer-supplied``) are listed apart from the Customer Purchase BOM (``customer_supplied_components``);
-* ``resolve-parts PARTS.json [--mechanics none|derived]``: price a part list (OpenSci part numbers and quantities,
-  without a design) for an Order;
+* ``order quote BOM.json [--confirm REVIEW.json] [--review-out FILE] [--schema-version 2|1] [--json]``: quote a
+  purchase BOM (OpenSci part numbers and quantities, e.g. from ``assembly plan bom PLAN --purchase``) with OpenSci's line
+  review; changed lines are confirmed with ``--confirm`` before ordering (``os_optics.client.bom_review``). Exit 0 =
+  every line orderable (next: ``order create RESOLUTION_ID``), 1 = changes to confirm (the review file is written), 65 =
+  a BOM or confirmation refused locally (nothing sent), 67 = refused by the service, 77 = no token (the BOM stays in its
+  file; the output says how to register or sign in and resume with the same command);
+* ``resolve-parts PARTS.json [--mechanics none|derived]``: price a part list (the version-1 body; ``order quote`` is its
+  successor, and the BOM-only service refuses derived mechanics with ``ORDER_OPTION_RETIRED``);
 * ``products mechanical [--kind MOUNT|POST|POST_HOLDER|BREADBOARD] [--json]``: OpenSci's mechanical part numbers and
   their facts;
 * ``resolution show ID [--locale zh-CN|en]``;
@@ -39,8 +45,8 @@ a command-line value. Every command prints one JSON document on stdout; a refusa
 * ``order create ID [--address ADDRESS_ID] [--additional-order]`` / ``order show ORDER_ID [--locale L] [--document order|quotation|contract]``
   / ``order list`` / ``order report-transfer ORDER_ID`` / ``order withdraw ORDER_ID`` (only while unpaid and no transfer
   was reported; the Order and its data are deleted);
-* ``assembly drawing ID --out DIR [--no-upload] [--locale en|zh-CN]``: the Detailed Assembly Drawing on this device
-  (in English or Simplified Chinese), uploaded with its local assembly validation;
+* ``assembly drawing ID --out DIR [--locale en|zh-CN]``: the Detailed Assembly Drawing of a resolution on this device
+  (in English or Simplified Chinese); nothing is uploaded (``--no-upload`` is accepted and has no effect);
 * ``artifacts list ID`` / ``artifacts show SET_ID`` / ``artifacts download SET_ID ROLE --out FILE`` (ROLE as the
   manifest names it: DRAWING_SVG, DRAWING_PDF, DRAWING_RESULT, DRAWING_MANIFEST, VALIDATION_RESULT; the drawing schema
   3.0 names ASSEMBLY_DRAWING_SVG / ASSEMBLY_DRAWING_PDF are accepted too);
@@ -48,6 +54,15 @@ a command-line value. Every command prints one JSON document on stdout; a refusa
   FILE) [--error-code CODE] [--request-id ID ...] [--resolution-id ID] [--order-id ID] [--command TEXT] [--agent NAME]
   [--locale zh-CN|en]``: send feedback to OpenSci (any Account token); the engine version, the Python runtime and the
   active local catalog release are added. Prints the receipt ``{"feedback_id", "received_at", "status", "replayed"}``.
+
+Retired by the BOM-only OpenSci service (they stay here for an earlier service, which still answers them): ``resolve``,
+derived mechanics in ``resolve-parts``, ``assembly preview`` / ``drawing``, ``view --resolution``, ``resolution|order
+layout``, ``resolution|order mounting-sheet``, ``artifacts``, and ``order create`` of a design resolution. Their refusal
+(``ORDERING_BASIS_RETIRED`` / ``ROUTE_RETIRED`` with 410, ``ORDER_OPTION_RETIRED`` with 422) has the recovery
+``USE_LOCAL_PLAN`` and a hint naming the local command that replaces the command (exit 67); without a token these commands
+are sent anonymously, as the service answers a retired route before it authenticates. Without a token any other command
+prints its refusal ``TOKEN_MISSING`` with ``details.handoff`` (the Account registration / sign-in URLs, the token file, the
+command to resume with) and the same as text on stderr.
 """
 
 from __future__ import annotations
@@ -77,6 +92,32 @@ MECHANICAL_KIND_CHOICES = ("MOUNT", "POST", "POST_HOLDER", "BREADBOARD")
 DEFAULT_LIFETIME_HOURS = 168
 TOKEN_LIFECYCLES = ("single-use", "time-limited", "permanent")
 HTTP_SERVER_ERROR = 500
+#: ``order quote``: the review needs changes confirmed before ordering (the review file is written).
+QUOTE_CHANGES_REQUIRED = 1
+BOM_SCHEMA_VERSION_CHOICES = ("2", "1")
+REVIEW_SUFFIX = ".review.json"
+#: The local command that replaces each command the BOM-only service retired (the refusal's ``hint``).
+RETIRED_HINTS = {
+    "resolve": "Ordering from a Project run is retired. Plan locally and buy the parts: os-optics assembly plan derive "
+               "PROJECT.json --out PLAN; os-optics assembly plan bom PLAN --purchase --out BOM.json; os-optics order quote "
+               "BOM.json.",
+    "mechanics": "OpenSci no longer selects mounts for a part list: derive the chains locally (assembly plan derive) and "
+                 "list the mounts, posts and holders as lines.",
+    "preview": "Hosted assembly previews are retired: os-optics assembly plan preview PLAN --out preview.zip, then "
+               "os-optics view PLAN.",
+    "drawing": "Hosted assembly details are retired: os-optics assembly plan draw PLAN --out DIR.",
+    "layout": "Optical layout drawings are no longer delivered: the local assembly drawing (assembly plan draw) replaces "
+              "them.",
+    "mounting-sheet": "Mounting sheets are no longer delivered: os-optics assembly plan show PLAN lists every support "
+                      "chain.",
+    "artifacts": "Uploaded assembly artifacts are retired: drawings stay on your machine.",
+    "order-design": "Design resolutions can no longer be ordered. Plan locally and buy the parts: os-optics assembly plan "
+                    "bom PLAN --purchase --out BOM.json; os-optics order quote BOM.json.",
+}
+#: The help sentence of a command the BOM-only service retired.
+RETIRED_NOTE = ("Retired by the BOM-only OpenSci service (answered with the hint of the local command that replaces it); "
+                "an earlier service still answers it. ")
+QUOTE_REPEAT_NOTE = "Sending the same BOM again gives the same request, so a repeated command never creates a second quote."
 
 #: Anything shaped like an Account token (usage errors echo the command line; a token typed there is not repeated).
 TOKEN_SHAPED = re.compile(r"oat_[0-9A-Za-z]{8,}(?:_[0-9A-Za-z]*)?")
@@ -114,6 +155,8 @@ ACCOUNT_DESCRIPTION = (
     + CONNECTION_HELP
 )
 RESOLVE_DESCRIPTION = (
+    RETIRED_NOTE + "Locally: 'os-optics assembly plan derive PROJECT.json --out PLAN', 'os-optics assembly plan bom PLAN "
+    "--purchase --out BOM.json', 'os-optics order quote BOM.json'. "
     "Submit a locally validated run for commercial resolution: RUN_DIR is the directory written by 'os-optics "
     "project run --out-dir' (verified first). Prints the resolution: resolution_id, order_options, the Customer "
     "Purchase BOM with prices (with the Shipping line and, when chosen, the OpenSci assembly and alignment service line) "
@@ -188,6 +231,8 @@ PARTS_DESCRIPTION = (
     "together as an optical system; with DERIVED mechanics it checked that each optic's mount, post and holder fit "
     "together at the stated beam height, and the deliverable is the mounting sheet ('resolution mounting-sheet'). "
     "Order it with 'order create RESOLUTION_ID'. Submitting the same list again returns the same resolution. "
+    "The BOM-only OpenSci service refuses mechanical supply DERIVED and mounting entries (ORDER_OPTION_RETIRED): use "
+    "'os-optics order quote BOM.json', which quotes a purchase BOM with its line review. "
     + CONNECTION_HELP
 )
 PRODUCTS_DESCRIPTION = (
@@ -198,6 +243,7 @@ PRODUCTS_DESCRIPTION = (
     "service's document (default: one line per product). Prices come with a resolution. " + CONNECTION_HELP
 )
 MOUNTING_SHEET_DESCRIPTION = (
+    RETIRED_NOTE + "Locally: 'os-optics assembly plan show PLAN' lists every support chain. "
     "The mounting sheet of OpenSci mounts chosen per optic without a laboratory layout (a part list with mechanical "
     "supply DERIVED, or an optical-system design bought with --mechanics derived --platform none): for each optic unit "
     "the number of sets, the angle of incidence and where it comes from, its mount, post and post holder, the assembly "
@@ -220,8 +266,34 @@ ADDRESS_DESCRIPTION = (
     "postal code and a label; the first address becomes the default, --default makes this one the default. Editing "
     "and deleting addresses is done on the OpenSci Account website. " + CONNECTION_HELP
 )
+QUOTE_DESCRIPTION = (
+    "Quote a purchase BOM: BOM.json is {\"schema\": \"opensci.commercial.part_list_submission\", \"schema_version\": "
+    "\"2\", \"lines\": [{\"line_id\": \"L1\", \"opensci_sku\": \"OS-OPT-...\", \"quantity\": 2, \"purpose\": \"PLAN\"}, "
+    "...]} -- OpenSci part numbers (optics OS-OPT-*, mounts, posts, post holders and breadboards OS-MECH-*) and quantities, "
+    "as 'os-optics assembly plan bom PLAN --purchase --out BOM.json' writes it or written by hand (line_id and purpose "
+    "PLAN|SPARE are optional). OpenSci checks that every line can be supplied now (never whether the parts fit together) "
+    "and prices the lines that can. Every line orderable: prints the quote and the next command, 'os-optics order create "
+    "RESOLUTION_ID' (exit 0). Some lines not suppliable as listed (NOT_ORDERABLE, TEMPORARILY_UNAVAILABLE, ABOVE_LIMIT): "
+    "prints the changed lines and writes the review file (default BOM.review.json beside the BOM, or --review-out) with a "
+    "proposed confirmation that keeps the other lines and removes the changed ones; edit its decisions if the person wants "
+    "(QUANTITY_CHANGED with a quantity for an ABOVE_LIMIT line, SUBSTITUTED with another part number and quantity, REMOVED) "
+    "and send it with 'order quote BOM.json --confirm REVIEW.json' (exit 1 until then; the quote cannot be ordered before "
+    "its changes are confirmed). No line suppliable: BOM_NOT_ORDERABLE, the review file is written, nothing is stored. "
+    "The confirmation is checked here first (CONFIRMATION_INCONSISTENT, nothing sent). Without a token nothing is sent: "
+    "the output names the Account registration and sign-in pages and the token file, and the same command resumes; the "
+    "same BOM gives the same request, so repeating it never creates a second quote. --schema-version 1 sends the earlier "
+    "part-list body for a service before BOM-only ordering (line ids filled in, no purpose, no confirmation). "
+    + CONNECTION_HELP
+)
+QUOTE_EXIT_HELP = (
+    "exit codes: 0 = every line orderable, 1 = changes to confirm (review file written), 64 = usage error / unreadable file, "
+    "65 = BOM or confirmation refused locally (nothing sent), 67 = refused by the OpenSci service (BOM_NOT_ORDERABLE writes "
+    "the review file), 69 = the service is unreachable or unavailable, 77 = no token (see the handoff), 78 = OPENSCI_API_URL "
+    "is not set or not usable"
+)
 ORDER_DESCRIPTION = (
-    "Orders of a resolution. 'create' creates the Order directly: the token (commercial:order:place) authorizes it. "
+    "Orders of a resolution. 'quote BOM.json' quotes a purchase BOM with OpenSci's line review (see 'order quote --help'). "
+    "'create' creates the Order directly: the token (commercial:order:place) authorizes it. "
     "It ships to --address ADDRESS_ID ('account address list') or, without it, to the default address; with no "
     "address at all it is refused (recovery ADD_SHIPPING_ADDRESS: 'account address add'). "
     "The Order of a design and of a part list is created the same way. "
@@ -240,31 +312,32 @@ ORDER_DESCRIPTION = (
     "'withdraw' withdraws an Order while it is unpaid and no "
     "transfer was reported, only when the person asks (to change a design after ordering: withdraw, run the design "
     "again, order again); the Order and its data are deleted, so tell the person it was withdrawn. After a reported "
-    "transfer or a payment it is refused (ORDER_NOT_WITHDRAWABLE): the person contacts OpenSci. " + CONNECTION_HELP
+    "transfer or a payment it is refused (ORDER_NOT_WITHDRAWABLE): the person contacts OpenSci. A quote with changed "
+    "lines is refused until they are confirmed (BOM_CHANGES_UNCONFIRMED: 'order quote BOM.json --confirm REVIEW.json'); "
+    "a design resolution can no longer be ordered from the BOM-only service (ORDERING_BASIS_RETIRED). " + CONNECTION_HELP
 )
 PREVIEW_DESCRIPTION = (
+    RETIRED_NOTE + "Locally: 'os-optics assembly plan preview PLAN --out preview.zip' and 'os-optics view PLAN'. "
     "Fetch the Experimental Lab Assembly of a resolution, open it in memory and run the local layout / collision check "
     "on this device. Prints a summary; --out writes the assembly check result (JSON); --view opens it in the local "
     "viewer; --snapshot writes PNG views. No decrypted package is written. " + CONNECTION_HELP
 )
 DRAWING_COMMAND_DESCRIPTION = (
+    RETIRED_NOTE + "Locally: 'os-optics assembly plan draw PLAN --out DIR'. "
     "The Detailed Assembly Drawing of a resolution, generated on this device: opens the Assembly Preview and the "
-    "Assembly Detail in memory, runs the local assembly validation, writes assembly_drawing.svg, assembly_drawing.pdf, "
-    "drawing_result.json and drawing_manifest.json into --out, then uploads the validation and the drawing to OpenSci "
-    "and reads them back (unless --no-upload). When the local assembly check passed, the Detailed Assembly Drawing is "
+    "Assembly Detail in memory, runs the local assembly validation and writes assembly_drawing.svg, assembly_drawing.pdf, "
+    "drawing_result.json and drawing_manifest.json into --out; nothing is uploaded (drawings stay on this device; "
+    "--no-upload is accepted and has no effect). When the local assembly check passed, the Detailed Assembly Drawing is "
     "written, ready for delivery (exit 0). When it FAILED or could not be completed the drawing is refused, nothing is "
-    "written or uploaded (exit 65, the JSON error lists the issues); with --diagnostic a diagnostic sheet with the issues "
-    "behind the status is written and uploaded instead, not ready for delivery (exit 2). The summary names the sheet "
+    "written (exit 65, the JSON error lists the issues); with --diagnostic a diagnostic sheet with the issues "
+    "behind the status is written instead, not ready for delivery (exit 2). The summary names the sheet "
     "(status, delivery_ready). --locale zh-CN writes the sheet in "
     "Simplified Chinese (default en). The "
     "Assembly Detail is available once OpenSci has confirmed the payment of an Order of this resolution (exit 75 until "
     "then). An Order without OpenSci mechanics has no assembly drawing: use 'order layout ORDER_ID' for its Optical "
     "Layout Drawing; OpenSci mounts chosen per optic without a layout come with the mounting sheet ('order "
     "mounting-sheet ORDER_ID'). "
-    "The summary states the drawing (status, delivery_ready, validation, files, out) and the upload as its own outcome: "
-    "upload.status UPLOADED with the stored validation and drawing, NOT_REQUESTED with --no-upload, or FAILED with the "
-    "error, the parts already stored and the retry command; the drawing files are written in every case, and an upload "
-    "that fails exits with its error's code after the summary is printed. "
+    "The summary states the drawing (status, delivery_ready, validation, files, out). "
     + CONNECTION_HELP
 )
 FEEDBACK_CATEGORY_CHOICES = ("PROBLEM", "FEATURE_REQUEST", "DOCUMENTATION")
@@ -284,6 +357,7 @@ FEEDBACK_DESCRIPTION = (
 )
 ARTIFACT_ROLES = ("DRAWING_PDF", "DRAWING_SVG", "DRAWING_RESULT", "DRAWING_MANIFEST", "VALIDATION_RESULT")
 ARTIFACTS_DESCRIPTION = (
+    RETIRED_NOTE + "Drawings stay on your machine. "
     "Artifacts stored for a resolution (local assembly validations and drawings uploaded from this device). 'show' lists "
     "a set's files with their role, file name, size and SHA-256 (roles: DRAWING_PDF assembly_drawing.pdf, DRAWING_SVG "
     "assembly_drawing.svg, DRAWING_RESULT drawing_result.json, DRAWING_MANIFEST drawing_manifest.json, VALIDATION_RESULT "
@@ -333,16 +407,54 @@ def exit_code_for(error: Any) -> int:
     return API_REFUSED
 
 
-def _error(error: Any) -> int:
+def _error(error: Any, *, kept: str | None = None, repeat_note: str | None = None) -> int:
+    """The JSON error document on stdout and its exit code; a ``TOKEN_MISSING`` refusal also prints its handoff
+    (``details.handoff``: how to register or sign in, where to save the token, the command to resume with) on stderr."""
+
+    from .client.credentials import handoff_text
+    from .client.errors import TOKEN_MISSING
+
     _out({"status": "ERROR", "error": error.as_dict()})
+    handoff = error.details.get("handoff") if error.code == TOKEN_MISSING else None
+    if isinstance(handoff, dict):
+        sys.stderr.write(handoff_text(handoff, kept=kept, repeat_note=repeat_note))
     return exit_code_for(error)
 
 
-def _client(args: argparse.Namespace, token_file: str | None = None) -> Any:
+def _client(args: argparse.Namespace, token_file: str | None = None, *, anonymous: bool = False) -> Any:
+    """The client of the command; ``anonymous``: a command the BOM-only service retired, sent without a token when
+    there is none (``OpenSciClient`` ``anonymous``); the client is kept on ``args`` for ``_retired``."""
+
     from .client import OpenSciClient
 
     path = token_file if token_file is not None else getattr(args, "token_file", None)
-    return OpenSciClient.from_environment(Path(path) if path else None, api_url=getattr(args, "api_url", None))
+    client = OpenSciClient.from_environment(Path(path) if path else None, api_url=getattr(args, "api_url", None),
+                                            anonymous=anonymous)
+    if anonymous:
+        args.anonymous_client = client
+    return client
+
+
+def _retired(work: Any, hint: str) -> Any:
+    """A command the BOM-only service retired: its retirement refusal carries ``RETIRED_HINTS[hint]`` (the local command
+    that replaces it), and a ``401`` of an earlier service to an anonymous request is ``TOKEN_MISSING``."""
+
+    def run(args: argparse.Namespace) -> int:
+        from .client import OpenSciApiError
+        from .client.errors import RETIREMENT_CODES
+
+        try:
+            return work(args)
+        except OpenSciApiError as exc:
+            client = getattr(args, "anonymous_client", None)
+            error = client.anonymous_refusal(exc) if client is not None else exc
+            if error.code in RETIREMENT_CODES:
+                error.local_hint = RETIRED_HINTS[hint]
+            if error is exc:
+                raise
+            raise error from None
+
+    return run
 
 
 def _guarded(work: Any) -> Any:
@@ -611,7 +723,7 @@ def _resolve(args: argparse.Namespace) -> int:
         constraints["spare_units"] = dict(sorted(dict(args.spare).items()))
     if args.mounting:
         constraints["mounting"] = _mounting(args.mounting)
-    _out(_client(args).submit(args.run_dir, customer_constraints=constraints or None))
+    _out(_client(args, anonymous=True).submit(args.run_dir, customer_constraints=constraints or None))
     return 0
 
 
@@ -652,7 +764,7 @@ def _products(args: argparse.Namespace) -> int:
 def _mounting_sheet(args: argparse.Namespace) -> int:
     from .mounting_sheet import render_mounting_sheet
 
-    client = _client(args)
+    client = _client(args, anonymous=True)
     order_id = getattr(args, "order_id", None)
     document = client.order_mounting_sheet(order_id) if order_id else client.resolution_mounting_sheet(args.resolution_id)
     text = render_mounting_sheet(document, args.locale) if args.locale else None
@@ -699,14 +811,14 @@ def _resolution_show(args: argparse.Namespace) -> int:
 def _resolution_layout(args: argparse.Namespace) -> int:
     from .cli_layout import write_layout
 
-    package = _client(args).resolution_optical_layout(args.resolution_id)
+    package = _client(args, anonymous=True).resolution_optical_layout(args.resolution_id)
     return write_layout(package, args.out, locale=args.locale, extra={"resolution_id": args.resolution_id}, save_package=True)
 
 
 def _order_layout(args: argparse.Namespace) -> int:
     from .cli_layout import write_layout
 
-    package = _client(args).order_optical_layout(args.order_id)
+    package = _client(args, anonymous=True).order_optical_layout(args.order_id)
     return write_layout(package, args.out, locale=args.locale, extra={"order_id": args.order_id}, save_package=True)
 
 
@@ -726,12 +838,107 @@ def _with_feedback_hint(document: dict[str, Any]) -> dict[str, Any]:
         "command": f"os-optics feedback submit --category PROBLEM --summary TEXT --details-file FILE --order-id {order_id}"}}
 
 
+#: The hint of each refusal of ``order create`` that names a local step (by code).
+ORDER_CREATE_HINTS = {"ORDERING_BASIS_RETIRED": RETIRED_HINTS["order-design"], "ROUTE_RETIRED": RETIRED_HINTS["order-design"],
+                      "ORDER_OPTION_RETIRED": RETIRED_HINTS["mechanics"]}
+
+
+def _create_order(client: Any, args: argparse.Namespace) -> dict[str, Any]:
+    from .client import OpenSciApiError
+    from .client.errors import BOM_CHANGES_UNCONFIRMED, CONFIRM_BOM_HINT
+
+    try:
+        return client.create_order(args.resolution_id, shipping_address_id=args.address, additional_order=args.additional_order)
+    except OpenSciApiError as exc:
+        exc.local_hint = CONFIRM_BOM_HINT if exc.code == BOM_CHANGES_UNCONFIRMED else ORDER_CREATE_HINTS.get(exc.code)
+        raise
+
+
+def _write_review(target: Path, document: dict[str, Any]) -> Path:
+    from .output_files import replace_files
+
+    replace_files(target.parent, {target.name: (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")})
+    return target
+
+
+def _order_quote(args: argparse.Namespace) -> int:
+    """``order quote BOM.json [--confirm REVIEW.json]`` (``QUOTE_DESCRIPTION``)."""
+
+    from .client import OpenSciApiError, OpenSciConfigurationError
+    from .client.bom_review import (CHANGES_REQUIRED, ORDERABLE, changed_lines, confirmation_body, purchase_bom_body,
+                                    review_document, review_of)
+    from .client.errors import (BOM_CONFIRMATION_INVALID, BOM_NOT_ORDERABLE, RESOLUTION_NOT_FOUND, RETIREMENT_CODES,
+                                TOKEN_MISSING)
+
+    if args.confirm and args.schema_version == "1":
+        print("error: --confirm sends a confirmed BOM in schema version 2; leave out --schema-version 1", file=sys.stderr)
+        return USAGE_ERROR
+    bom = Path(args.bom)
+    if args.confirm:
+        body = confirmation_body(_read_json_file(args.confirm, "the review file"))
+    else:
+        body = purchase_bom_body(_read_json_file(args.bom, "the BOM"), schema_version=args.schema_version)
+    resume = f"os-optics order quote {args.bom}" + (f" --confirm {args.confirm}" if args.confirm else "")
+    kept = f"BOM stays in {args.bom}"
+    try:
+        client = _client(args)
+    except OpenSciConfigurationError as exc:
+        if exc.code == TOKEN_MISSING and isinstance(exc.details.get("handoff"), dict):
+            exc.details["handoff"]["resume_command"] = resume
+            return _error(exc, kept=kept, repeat_note=QUOTE_REPEAT_NOTE)
+        raise
+    review_out = Path(args.review_out) if args.review_out else bom.with_name(bom.stem + REVIEW_SUFFIX)
+    try:
+        response = client.quote_bom(body, schema_version=body["schema_version"])
+    except OpenSciApiError as exc:
+        review = exc.details.get("bom_review") if exc.code == BOM_NOT_ORDERABLE else None
+        if isinstance(review, dict):
+            written = _write_review(review_out, review_document(body, review, None))
+            exc.local_hint = (f"No line of this BOM can be supplied now (the review is in {written}); change the BOM and "
+                              "quote it again.")
+            _out({"status": "ERROR", "error": exc.as_dict(), "review": str(written)})
+            return exit_code_for(exc)
+        if exc.code == BOM_CONFIRMATION_INVALID:
+            exc.local_hint = ("The confirmed changes do not match the reviewed lines (details.problems): run --confirm again "
+                              "with the review file as 'order quote' wrote it, or quote the BOM again (os-optics order quote "
+                              f"{args.bom}).")
+        elif exc.code == RESOLUTION_NOT_FOUND and args.confirm:
+            exc.local_hint = (f"The reviewed quote no longer exists (it is kept for 7 days) or belongs to another "
+                              f"organization: quote the BOM again (os-optics order quote {args.bom}) and confirm the new "
+                              "review.")
+        elif exc.code in RETIREMENT_CODES:
+            exc.local_hint = RETIRED_HINTS["mechanics"]
+        raise
+    review = review_of(response)
+    resolution_id = response.get("resolution_id")
+    resolution = response.get("resolution") if isinstance(response.get("resolution"), dict) else {}
+    status = review.get("status") if review else ORDERABLE
+    summary: dict[str, Any] = {"status": status, "resolution_id": resolution_id, "replayed": bool(response.get("replayed")),
+                               "schema_version": body["schema_version"], "lines": len(body["lines"]),
+                               "confirmed": bool(body.get("confirmed_changes")), "bom_review": review,
+                               "customer_bom": resolution.get("customer_bom")}
+    code = 0
+    if status == CHANGES_REQUIRED:
+        written = _write_review(review_out, review_document(body, review, resolution_id))
+        summary.update(changed_lines=changed_lines(review), review=str(written),
+                       message="Some lines cannot be supplied as listed: show them to the person, adjust the proposed "
+                               "confirmation in the review file if they want, then confirm it; this quote cannot be "
+                               "ordered before.",
+                       next_command=f"os-optics order quote {args.bom} --confirm {written}")
+        code = QUOTE_CHANGES_REQUIRED
+    else:
+        summary["next_command"] = f"os-optics order create {resolution_id}"
+    if args.json:
+        summary["response"] = response
+    _out(summary)
+    return code
+
+
 def _order(args: argparse.Namespace) -> int:
     client = _client(args)
     command = args.order_command
     if command == "create":
-        _out(_with_feedback_hint(client.create_order(args.resolution_id, shipping_address_id=args.address,
-                                                     additional_order=args.additional_order)))
+        _out(_with_feedback_hint(_create_order(client, args)))
     elif command == "show":
         _out(client.order_presentation(args.order_id, locale=args.locale, document=args.document) if args.locale
              else client.order(args.order_id))
@@ -762,7 +969,7 @@ def _assembly_preview(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"error: --tolerance: {exc}", file=sys.stderr)
         return USAGE_ERROR
-    client = _client(args)
+    client = _client(args, anonymous=True)
     preview = client.assembly_preview(args.resolution_id)
     validation = client.validate_assembly(preview, tolerances=tolerances)
     doc: dict[str, Any] = {"resolution_id": args.resolution_id, "validation": _validation_summary(validation)}
@@ -798,7 +1005,7 @@ def _view_resolution(args: argparse.Namespace) -> int:
     if args.run_dir:
         print("error: give either a run directory or --resolution, not both", file=sys.stderr)
         return USAGE_ERROR
-    preview = _client(args).assembly_preview(args.resolution)
+    preview = _client(args, anonymous=True).assembly_preview(args.resolution)
     return cli_view.present(assembly_view_scene(preview), args, allow_html=False)
 
 
@@ -808,24 +1015,17 @@ def register_view(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     parser.add_argument("--resolution", metavar="RESOLUTION_ID",
                         help="show the Experimental Lab Assembly of this resolution (uses your Account token; nothing "
-                             "is written to disk except --snapshot images)")
+                             "is written to disk except --snapshot images); retired by the BOM-only service: "
+                             "'os-optics view PLAN' shows a local assembly plan")
     for action in _connection_options()._actions:
         if action.option_strings and action.dest != "help":
             parser.add_argument(*action.option_strings, dest=action.dest, help=action.help)
-    parser.set_defaults(handler=_guarded(_view_resolution))
+    parser.set_defaults(handler=_guarded(_retired(_view_resolution, "preview")))
     return parser
 
 
-def _stored_parts(parts: Any) -> dict[str, Any]:
-    """The artifact sets an upload stored and read back (``validation`` / ``drawing``), as the drawing summary names them."""
-
-    return {part: {"artifact_set_id": view.get("artifact_set_id"), "artifact_kind": view.get("artifact_kind"),
-                   "artifact_set_digest": view.get("artifact_set_digest"), "replayed": view.get("replayed")}
-            for part, view in parts.items()}
-
-
 def _assembly_drawing(args: argparse.Namespace) -> int:
-    client = _client(args)
+    client = _client(args, anonymous=True)
     preview = client.assembly_preview(args.resolution_id)
     drawing = client.assembly_drawing(args.resolution_id, args.out, preview=preview, locale=args.locale,
                                       diagnostic=args.diagnostic)
@@ -840,27 +1040,8 @@ def _assembly_drawing(args: argparse.Namespace) -> int:
         "files": {f.path: f.sha256 for f in drawing.manifest.files},
         "out": args.out,
     }
-    # the drawing is written and reported whatever the upload does: the upload is its own outcome in the summary
-    failed = None
-    if args.no_upload:
-        doc["upload"] = {"status": "NOT_REQUESTED"}
-    else:
-        from .client import OpenSciApiError
-
-        try:
-            uploaded = client.upload_assembly_results(args.resolution_id, drawing=drawing, preview=preview)
-            doc["upload"] = {"status": "UPLOADED", **_stored_parts(uploaded)}
-        except OpenSciApiError as exc:
-            failed = exc
-            retry = ["os-optics", "assembly", "drawing", args.resolution_id, "--out", args.out, "--locale", args.locale,
-                     *(["--diagnostic"] if args.diagnostic else [])]
-            doc["upload"] = {"status": "FAILED", "error": exc.as_dict(), "uploaded": _stored_parts(exc.partial_results or {}),
-                             "retry": retry}
+    # (nothing is uploaded: the drawing stays on this device; status and delivery_ready say which sheet it is)
     _out(doc)
-    # (the drawing is written either way: status and delivery_ready say which sheet it is; a requested upload that did not
-    # happen exits with its error's code)
-    if failed is not None:
-        return exit_code_for(failed)
     from .cli_exit import DIAGNOSTIC_SHEET_WRITTEN
 
     return 0 if result.delivery_ready else DIAGNOSTIC_SHEET_WRITTEN
@@ -870,7 +1051,7 @@ def _assembly_drawing(args: argparse.Namespace) -> int:
 
 
 def _artifacts(args: argparse.Namespace) -> int:
-    client = _client(args)
+    client = _client(args, anonymous=True)
     if args.artifacts_command == "list":
         _out(client.artifact_sets(args.resolution_id, artifact_kind=args.kind))
         return 0
@@ -949,10 +1130,11 @@ def register(sub: Any, *, assembly: Any) -> None:
 
     common = _connection_options()
 
-    def leaf(parent: Any, name: str, work: Any, help_text: str, description: str) -> argparse.ArgumentParser:
+    def leaf(parent: Any, name: str, work: Any, help_text: str, description: str, *,
+             retired: str | None = None) -> argparse.ArgumentParser:
         parser = parent.add_parser(name, parents=[common], help=help_text, description=description,
                                    epilog=COMMERCE_EXIT_HELP, allow_abbrev=False)
-        parser.set_defaults(handler=_guarded(work))
+        parser.set_defaults(handler=_guarded(_retired(work, retired) if retired else work))
         return parser
 
     p_account = sub.add_parser("account", help="your OpenSci Account on this device: token status, create, rotate, logout; shipping addresses",
@@ -1001,8 +1183,8 @@ def register(sub: Any, *, assembly: Any) -> None:
     rotate.add_argument("--lifetime-hours", type=int, default=DEFAULT_LIFETIME_HOURS, help="lifetime of the new token, 1 to 720 (default 168)")
     leaf(account_sub, "logout", _logout, "revoke the token in use and delete its token file", ACCOUNT_DESCRIPTION)
 
-    p_resolve = leaf(sub, "resolve", _resolve, "submit a run directory for commercial resolution (BOM and prices)",
-                     RESOLVE_DESCRIPTION)
+    p_resolve = leaf(sub, "resolve", _resolve, "submit a run directory for commercial resolution (retired by the service; "
+                     "use assembly plan + order quote)", RESOLVE_DESCRIPTION, retired="resolve")
     p_resolve.add_argument("run_dir", help="a directory written by 'os-optics project run --out-dir'")
     options = p_resolve.add_mutually_exclusive_group()
     options.add_argument("--optics-only", action="store_true",
@@ -1036,7 +1218,8 @@ def register(sub: Any, *, assembly: Any) -> None:
                                 "optic (implies --platform none)")
 
     p_parts = leaf(sub, "resolve-parts", _resolve_parts,
-                   "price a part list (OpenSci part numbers and quantities, no design) for an Order", PARTS_DESCRIPTION)
+                   "price a part list (version-1 body; 'order quote' quotes a purchase BOM)", PARTS_DESCRIPTION,
+                   retired="mechanics")
     p_parts.add_argument("parts", metavar="PARTS.json", help="the part list: lines, mechanical_supply, mounting")
     p_parts.add_argument("--mechanics", choices=MECHANICS_CHOICES,
                          help="replace the file's mechanical_supply: none (the listed parts only) or derived (OpenSci "
@@ -1061,13 +1244,13 @@ def register(sub: Any, *, assembly: Any) -> None:
     from .cli_layout import FETCH_DESCRIPTION, add_output_options
 
     resolution_layout = leaf(resolution_sub, "layout", _resolution_layout,
-                             "the Optical Layout Drawing of a resolution without OpenSci mechanics, rendered here",
-                             FETCH_DESCRIPTION + " " + CONNECTION_HELP)
+                             "the Optical Layout Drawing of a resolution without OpenSci mechanics (retired by the service)",
+                             RETIRED_NOTE + FETCH_DESCRIPTION + " " + CONNECTION_HELP, retired="layout")
     resolution_layout.add_argument("resolution_id")
     add_output_options(resolution_layout)
     resolution_sheet = leaf(resolution_sub, "mounting-sheet", _mounting_sheet,
-                            "the mounting sheet of OpenSci mounts chosen per optic without a layout",
-                            MOUNTING_SHEET_DESCRIPTION)
+                            "the mounting sheet of OpenSci mounts chosen per optic (retired by the service)",
+                            MOUNTING_SHEET_DESCRIPTION, retired="mounting-sheet")
     resolution_sheet.add_argument("resolution_id")
     _mounting_sheet_options(resolution_sheet)
 
@@ -1075,6 +1258,19 @@ def register(sub: Any, *, assembly: Any) -> None:
                              description=ORDER_DESCRIPTION,
                              epilog=COMMERCE_EXIT_HELP)
     order_sub = p_order.add_subparsers(dest="order_command", required=True)
+    quote = leaf(order_sub, "quote", _order_quote, "quote a purchase BOM with OpenSci's line review (confirm changed lines "
+                 "with --confirm)", QUOTE_DESCRIPTION)
+    quote.epilog = QUOTE_EXIT_HELP
+    quote.add_argument("bom", metavar="BOM.json", help="the purchase BOM (assembly plan bom PLAN --purchase, or by hand)")
+    quote.add_argument("--confirm", metavar="REVIEW.json",
+                       help="send the proposed confirmation of this review file (as written by order quote, optionally "
+                            "with edited decisions)")
+    quote.add_argument("--review-out", metavar="FILE", help="write the review file here (default: BOM.review.json beside "
+                                                            "the BOM)")
+    quote.add_argument("--schema-version", choices=BOM_SCHEMA_VERSION_CHOICES, default="2",
+                       help="2 (default): the purchase BOM with its review; 1: the earlier part-list body for a service "
+                            "before BOM-only ordering (no purpose, no confirmation)")
+    quote.add_argument("--json", action="store_true", help="also print the service's whole answer (response)")
     order_create = leaf(order_sub, "create", _order, "create the Order of a resolution", ORDER_DESCRIPTION)
     order_create.add_argument("resolution_id")
     order_create.add_argument("--address", metavar="ADDRESS_ID",
@@ -1096,18 +1292,18 @@ def register(sub: Any, *, assembly: Any) -> None:
          "withdraw an unpaid Order before any transfer is reported (only when the person asks); its data is deleted",
          ORDER_DESCRIPTION).add_argument("order_id")
     order_layout = leaf(order_sub, "layout", _order_layout,
-                        "the Optical Layout Drawing of an Order without OpenSci mechanics (relative optical layout), rendered here",
-                        FETCH_DESCRIPTION + " " + CONNECTION_HELP)
+                        "the Optical Layout Drawing of an Order without OpenSci mechanics (retired by the service)",
+                        RETIRED_NOTE + FETCH_DESCRIPTION + " " + CONNECTION_HELP, retired="layout")
     order_layout.add_argument("order_id")
     add_output_options(order_layout)
     order_sheet = leaf(order_sub, "mounting-sheet", _mounting_sheet,
-                       "the mounting sheet of an Order with OpenSci mounts chosen per optic without a layout",
-                       MOUNTING_SHEET_DESCRIPTION)
+                       "the mounting sheet of an Order with OpenSci mounts chosen per optic (retired by the service)",
+                       MOUNTING_SHEET_DESCRIPTION, retired="mounting-sheet")
     order_sheet.add_argument("order_id")
     _mounting_sheet_options(order_sheet)
 
-    preview = leaf(assembly, "preview", _assembly_preview, "open a resolution's Experimental Lab Assembly and check it here",
-                   PREVIEW_DESCRIPTION)
+    preview = leaf(assembly, "preview", _assembly_preview, "open a resolution's Experimental Lab Assembly (retired by the "
+                   "service; use assembly plan preview)", PREVIEW_DESCRIPTION, retired="preview")
     preview.add_argument("resolution_id")
     preview.add_argument("--out", help="write the assembly check result (JSON) here")
     preview.add_argument("--view", action="store_true", help="open it in the local viewer")
@@ -1115,12 +1311,12 @@ def register(sub: Any, *, assembly: Any) -> None:
     from .cli import add_tolerance_argument
 
     add_tolerance_argument(preview)
-    drawing = leaf(assembly, "drawing", _assembly_drawing, "generate, write and upload the Detailed Assembly Drawing",
-                   DRAWING_COMMAND_DESCRIPTION)
+    drawing = leaf(assembly, "drawing", _assembly_drawing, "the Detailed Assembly Drawing of a resolution (retired by the "
+                   "service; use assembly plan draw)", DRAWING_COMMAND_DESCRIPTION, retired="drawing")
     drawing.epilog = DRAWING_EXIT_HELP
     drawing.add_argument("resolution_id")
     drawing.add_argument("--out", required=True, help="output directory for the four drawing files")
-    drawing.add_argument("--no-upload", action="store_true", help="write the drawing only; do not upload it")
+    drawing.add_argument("--no-upload", action="store_true", help=argparse.SUPPRESS)  # deprecated: nothing is uploaded
     drawing.add_argument("--overwrite", action="store_true", help=argparse.SUPPRESS)  # accepted; the files are always replaced
     drawing.add_argument("--diagnostic", action="store_true",
                          help="draw a package whose local assembly check FAILED or could not be completed as a diagnostic "
@@ -1128,14 +1324,18 @@ def register(sub: Any, *, assembly: Any) -> None:
     drawing.add_argument("--locale", choices=LOCALE_CHOICES, default="en",
                          help="the language of the sheet: en (default) or zh-CN (Simplified Chinese)")
 
-    p_artifacts = sub.add_parser("artifacts", help="artifacts stored for a resolution", description=ARTIFACTS_DESCRIPTION,
+    p_artifacts = sub.add_parser("artifacts", help="artifacts stored for a resolution (retired by the service)",
+                                 description=ARTIFACTS_DESCRIPTION,
                                  epilog=COMMERCE_EXIT_HELP)
     artifacts_sub = p_artifacts.add_subparsers(dest="artifacts_command", required=True)
-    listing = leaf(artifacts_sub, "list", _artifacts, "a resolution's artifact sets", ARTIFACTS_DESCRIPTION)
+    listing = leaf(artifacts_sub, "list", _artifacts, "a resolution's artifact sets", ARTIFACTS_DESCRIPTION,
+                   retired="artifacts")
     listing.add_argument("resolution_id")
     listing.add_argument("--kind", help="only this artifact kind (e.g. ASSEMBLY_DRAWING)")
-    leaf(artifacts_sub, "show", _artifacts, "one artifact set", ARTIFACTS_DESCRIPTION).add_argument("artifact_set_id")
-    download = leaf(artifacts_sub, "download", _artifacts, "download one file of an artifact set", ARTIFACTS_DESCRIPTION)
+    leaf(artifacts_sub, "show", _artifacts, "one artifact set", ARTIFACTS_DESCRIPTION,
+         retired="artifacts").add_argument("artifact_set_id")
+    download = leaf(artifacts_sub, "download", _artifacts, "download one file of an artifact set", ARTIFACTS_DESCRIPTION,
+                    retired="artifacts")
     download.add_argument("artifact_set_id")
     download.add_argument("role", metavar="ROLE", help="the file's role, as 'artifacts show' lists it: " + ", ".join(ARTIFACT_ROLES)
                           + " (ASSEMBLY_DRAWING_PDF / ASSEMBLY_DRAWING_SVG are accepted for DRAWING_PDF / DRAWING_SVG)")

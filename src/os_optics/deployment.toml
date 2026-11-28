@@ -7,3 +7,8 @@
 [service]
 # Origin of the OpenSci service (scheme://host[:port], no path). The catalog manifest is <origin>/api/v1/catalog.
 origin = "https://opensci-optics.com"
+
+[account]
+# Base URL of the OpenSci Account website, where a person registers or signs in and creates an Agent token (it may carry
+# a path, e.g. a local instance's /account/). OPENSCI_ACCOUNT_URL overrides it per process.
+origin = "https://account.opensci-optics.com"
