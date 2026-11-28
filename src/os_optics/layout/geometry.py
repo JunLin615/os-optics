@@ -52,7 +52,7 @@ def _region(pose: Pose, region: PolygonRegion) -> tuple[str, Polygon, float, flo
     return region.region_id, Polygon(xy), float(zs.min()), float(zs.max())
 
 
-def place(comp: EngineeringComponentSnapshot, pose: Pose, quaternion_norm_tol: float) -> Placed | None:
+def place(comp: EngineeringComponentSnapshot, pose: Pose) -> Placed | None:
     env = comp.envelope
     if env is None:
         return None
