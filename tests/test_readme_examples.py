@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -32,16 +33,22 @@ def test_readme_python_block_runs(index, monkeypatch, capsys, tmp_path):
         (tmp_path / "preview-delivery.json").write_text(json.dumps(preview_delivery), encoding="utf-8")
         (tmp_path / "detail-delivery.json").write_text(json.dumps(detail_delivery), encoding="utf-8")
         monkeypatch.chdir(tmp_path)
+    if "assembly_plan" in BLOCKS[index]:  # the plan examples read the mechanical catalog the documented variable names
+        from mechanical_fixture import fixture_path
+
+        monkeypatch.setenv("OS_OPTICS_MECHANICAL_CATALOG", str(fixture_path()))
     server = None
     if "OpenSciClient" in BLOCKS[index]:  # the commercial example runs against a local stand-in of the service
+        import commerce_stub
         from commerce_stub import AGENT_SCOPES, StubServer, StubState, credential_for
-        from delivery_helpers import sealed_reference_deliveries
+        from mechanical_fixture import fixture_path
 
-        from os_optics.assembly import load_assembly_preview
-
-        reference = ROOT / "tests" / "fixtures" / "assembly_drawing" / "reference.assembly-preview.zip"
-        state = StubState(resolution_id=load_assembly_preview(reference).manifest.binding.commercial_resolution_id,
-                          deliveries=sealed_reference_deliveries(), confirm_on_report=True)
+        # the stand-in supplies every part of the fixture catalogs the example's plan is derived from
+        fixture_parts = [p["optical_sku"] for p in json.loads((ROOT / "tests" / "fixtures" / "catalog" / "test_optical_catalog.v2.json")
+                                                               .read_text(encoding="utf-8"))["products"]]
+        fixture_parts += [i["opensci_sku"] for i in json.loads(fixture_path().read_text(encoding="utf-8"))["identities"]]
+        monkeypatch.setattr(commerce_stub, "ORDERABLE_OPTICS", (*commerce_stub.ORDERABLE_OPTICS, *fixture_parts))
+        state = StubState(resolution_id="00000000-0000-4000-8000-000000000001", confirm_on_report=True)
         state.add_token("agent", AGENT_SCOPES)
         server = StubServer(state).__enter__()
         monkeypatch.setenv("OPENSCI_API_URL", server.url)
@@ -53,10 +60,21 @@ def test_readme_python_block_runs(index, monkeypatch, capsys, tmp_path):
         if server is not None:
             server.__exit__(None, None, None)
     out = capsys.readouterr().out
-    if "OpenSciClient" in BLOCKS[index]:
-        assert namespace["order"]["order_number"] and namespace["validation"].status.value in ("PASS", "WARNING")
-        kinds = [s["artifact_kind"] for s in state.artifact_sets.values()]
-        assert sorted(kinds) == ["ASSEMBLY_DRAWING", "ASSEMBLY_LOCAL_VALIDATION"]
+    if "OpenSciClient" in BLOCKS[index]:  # the plan's purchase BOM is quoted as written, ordered, paid; nothing is uploaded
+        from os_optics.client import review_of
+
+        assert review_of(namespace["quote"])["status"] == "ORDERABLE"
+        assert [line["opensci_sku"] for line in review_of(namespace["quote"])["lines"]] ==             [line["opensci_sku"] for line in namespace["body"]["lines"]]
+        assert namespace["order"]["order_number"] and state.orders[namespace["order"]["order_id"]]
+        assert namespace["drawing"].written and all(path.is_file() for path in namespace["drawing"].written)
+        assert state.artifact_sets == {} and not any("artifact" in r["path"] for r in state.requests)
+        return
+    if "derive_plan" in BLOCKS[index]:  # the local plan: derived, edited, checked, drawn, and its purchase BOM
+        lines = out.splitlines()
+        assert lines[0].split()[0] in ("READY", "READY_WITH_WARNINGS")
+        purchased = ast.literal_eval(lines[1])
+        assert [purpose for _, _, purpose in purchased].count("SPARE") == 1 and purchased[-1][1:] == (1, "SPARE")
+        assert namespace["drawing"].written and namespace["report"]["source"]["revision"] == 2
         return
     if "validate_assembly_layout" in BLOCKS[index]:
         result = namespace["result"]

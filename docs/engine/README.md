@@ -1781,7 +1781,7 @@ refractive index (the same medium on both sides, or normal incidence) and ends w
 it meets one surface a third time (`RETURNS`), or as it leaves the design (`FREE`). Where it is followed it is the start of
 the chief ray a run traces from that source. The JSON API provides it before the Project has a complete run.
 
-`os_optics.local.json_api` (`opensci.local_json_api` 1.8, `capabilities()["json_api_version"]`) answers every call with JSON-safe data.
+`os_optics.local.json_api` (`opensci.local_json_api` 1.9, `capabilities()["json_api_version"]`) answers every call with JSON-safe data.
 `json_api.capabilities()["json_api_methods"]` lists its methods, and `json_api.call_method(method, params, file_map=...,
 data=...)` calls one by name with its parameters as a JSON object (the files or bytes a method takes go in `file_map` /
 `data`; the reply's files come back beside it): the entry point for a local host that is not a Python program.
@@ -1883,18 +1883,88 @@ beam), click a part for its id, name, SKU and size, toggle classes and beams, an
   `&projection=orthographic`), and from a script: `window.__opensciViewer.setCamera({angle_to_axis_deg: 86,
   elevation_deg: 8})`, `setView("iso")` and `frame(direction, up, box)` (three.js vectors and box).
 
-From Python: `os_optics.viewer.view_run("run")`, `render_snapshots("run", "shots")`, `scene_summary("run")`. After
-commercial resolution, `view_assembly(preview)` shows the Experimental Lab Assembly from memory -- each part coloured by
-class on the breadboard with the beam through it; nothing of the assembly data is written to disk.
+From Python: `os_optics.viewer.view_run("run")`, `render_snapshots("run", "shots")`, `scene_summary("run")`.
+`os-optics view PLAN_DIR` (or a plan's preview package `.zip`) shows the assembly of a local assembly plan (next
+section) without a token: each part on the board with the beam through it, coloured by the status of its checks, the
+parts of a finding highlighted (`--finding ID` frames them, `--revision N` shows an earlier revision); `--snapshot` works
+as for a run. From Python: `view_plan(revision, context)`, `view_assembly(preview)`.
 
-## From design to Order and Detailed Assembly Drawing
+## From design to hardware: local assembly plan, purchase BOM, Order
 
-Designing, simulating and Local Validation need no account. When a design is ready to buy, `os-optics` talks to
-the OpenSci Commercial Service for you: resolution, prices, the Order, the payment report, the Experimental Lab
-Assembly and the Detailed Assembly Drawing. The same workflow is available from Python (`os_optics.client`) and
-from the command line.
+Designing, simulating, planning the assembly, checking it and drawing it need no account and no network: `os-optics
+assembly plan` does it on this computer from your Project, the public optical catalog and the public mechanical catalog.
+OpenSci sells parts. The purchase BOM the plan writes (or one you write by hand) is quoted, ordered and paid through the
+OpenSci Commercial Service, which checks that every line can be supplied -- never whether the parts fit together: the
+local plan and its checks do that -- and ships the parts for you to assemble.
 
-### 1. Point the engine at OpenSci and give your Agent its own token
+### 1. Plan the assembly on this computer
+
+```bash
+os-optics catalog sync                                       # the optical and, when offered, the mechanical catalog
+os-optics assembly plan derive project.json --out plan       # a mount, post, holder and board hole for each optic
+os-optics assembly plan show plan --items                    # every item: supply, purchase, chain, board hole, ranges
+os-optics assembly plan edit plan --op '{"op": "set_purchase", "item_id": "pst-1", "selected": true, "spare_units": 1}'
+os-optics assembly plan check plan                           # interfaces, layout, collisions, supply, optics freshness
+os-optics view plan                                          # the assembly in 3D, each part coloured by its checks
+os-optics assembly plan draw plan --out drawing --locale zh-CN   # the assembly drawing of your design (SVG, PDF)
+os-optics assembly plan bom plan --purchase --out bom.json   # what you buy: exactly the request body of a quote
+```
+
+`derive` places each catalog optic in a mount, post and post holder at its design height and fixes the holder on the
+nearest free hole of the smallest breadboard that holds the layout (`--max-board-size-mm X Y`, `--customer-table X Y`
+for your own optical table, `--customer-owned INSTANCE_ID` for an optic you already have, `--beam-height-mm H`). A light
+source or a part that is not an OpenSci product keeps its design position as your own component, with space reserved
+around it. When no hardware fits, the plan is still written and its findings say what did not fit and why. The plan
+directory keeps every revision (`revisions/r0001.json` ...), the Projects they bind, the journal (`history.jsonl`) and
+`plan.json`, a copy of the head; `show` verifies the whole directory first (exit 66 when a file was changed or is
+missing), `history` prints the journal, and every item keeps its id (`opt-1`, `mnt-1`, `pst-1`, `hld-1`, `brd-1`,
+`cmp-1`, `env-1`) across revisions.
+
+`edit` applies operations as one new revision or writes nothing: `move_optic`, `adjust` (within a declared range),
+`set_hardware` (another `OS-MECH-*` or your own `USER-MECH-*` identity), `set_fixation`, `set_board`, `set_supply`,
+`set_purchase`, `set_mounting`, `rederive_chain`, `pin`, `declare_envelope` / `remove_envelope` (space reserved for a
+part of yours known only by its size), `rebind_catalogs` and `revert_to`. `--op-id ID` makes an edit replay safely,
+`--expect-base DIGEST` refuses it when the head moved, `--require-check` refuses one that adds an error. Moving an optic
+edits the plan's Project, so a bound optics run reads `STALE` until `assembly plan run-optics plan --out RUN_DIR` runs it
+again on this computer. `derive --from plan` derives again, keeping item ids, supply, purchase choices and pinned
+hardware.
+
+Each finding names its part or pair of parts, the interface when it is about one, the check that found it and its
+basis (`CONSERVATIVE_PROFILE` when the hardware rests on a conservative profile of the mechanical catalog). The status and
+exit code of every `assembly plan` command: 0 `READY` or `READY_WITH_WARNINGS`, 1 `HAS_ERRORS` (written), 2 `INCOMPLETE`
+(written: a check could not be evaluated; `draw`: a diagnostic sheet), 64 usage or file error, 65 refused (nothing
+written), 66 inconsistent plan directory, 70 internal error. `preview --out preview.zip` writes the plan's Assembly
+Preview Package (manifest 3.1, bound to the revision and its design BOM), `draw` the Detailed drawing 4.2 (title
+"Assembly drawing of your design", its parts legend from the design BOM with who supplies each row); neither is ever
+uploaded. `bom --design` lists every item of the plan; `bom --purchase` writes one `PLAN` line per part number you buy
+and one `SPARE` line per part number with spare units, and leaves out what you own or did not select (listed in its
+report). A plan with your own `USER-MECH` hardware is checked at plan level, but has no preview package or drawing yet.
+
+The mechanical catalog in effect is the active release `catalog sync` or `catalog import` stored, or the documents you
+name with `--mechanical FILE` (repeatable) or `OS_OPTICS_MECHANICAL_CATALOG`, including your own hardware (`USER-MECH-*`,
+publisher `USER`); `os-optics catalog mechanical list | show | status` reads it. The user guide pages
+`docs/en/assembly-plan.md` and `docs/en/mechanical-catalog.md` describe the plan and the catalog in full. From Python:
+
+```python
+from os_optics import assembly_plan as ap
+from os_optics.local import example_project
+
+ap.derive_plan(example_project(), out_dir="plan")      # the focus example: a source, a lens, a focal plane
+plan = ap.open_plan("plan")
+plan.edit([{"op": "set_purchase", "item_id": "pst-1", "selected": True, "spare_units": 1}], op_id="spare-post")
+checked = ap.check_plan(plan)
+print(checked.status.state.value, sorted({f.code.value for f in checked.findings}))
+drawing = ap.plan_drawing(plan, "drawing")           # the assembly drawing of your design, on this computer
+body, report = ap.purchase_bom(plan)                 # the purchase BOM: the request body of a quote
+print([(line["opensci_sku"], line["quantity"], line["purpose"]) for line in body["lines"]])
+```
+
+A host that is not a Python program uses the JSON API methods `derive_assembly_plan`, `check_assembly_plan`,
+`apply_assembly_plan_ops`, `assembly_plan_preview`, `assembly_plan_drawing`, `assembly_plan_bom` and
+`mechanical_catalog`; `os-optics schema assembly-plan` (also `assembly-plan-ops`, `design-bom`, `purchase-bom`,
+`bom-review`, `public-mechanical-catalog`) prints each document's JSON Schema.
+
+### 2. Point the engine at OpenSci and give your Agent its own token
 
 Sign in to the OpenSci Account and create an Agent token. Choose **single-use** (one successful new Order),
 **time-limited** (up to 30 days) or **permanent until revoked**. Download `opensci-token.txt`: this is the token
@@ -1904,7 +1974,7 @@ file consumed directly by the CLI. Keep it where only you and the Agent you auth
 export OPENSCI_API_URL=https://opensci-optics.com
 export OPENSCI_TOKEN_FILE=/path/to/opensci-token.txt
 os-optics account status             # organization, lifecycle, status, scopes and permissions
-os-optics resolve run                # Customer Purchase BOM and prices
+os-optics order quote bom.json       # the line review and prices of a purchase BOM
 os-optics order create RESOLUTION_ID # unpaid Order Number, quotation, contract, Account handoff
 os-optics order show ORDER_ID        # read and track even after a single-use token placed its Order
 ```
@@ -1918,127 +1988,57 @@ placements are refused. Read and tracking scopes remain available until expiry o
 no synthetic far-future expiry and can be revoked in Account. Reporting a bank transfer is not payment confirmation;
 OpenSci confirms receipt separately. Account shows the quotation, contract and payment instructions.
 
+You can plan and write the BOM before you have an Account. Without a token `order quote` sends nothing, keeps the BOM in
+its file and names the Account registration and sign-in pages (`OPENSCI_ACCOUNT_URL` selects another Account website),
+where to save the token and the same command to run again; it sends the same request, so it never creates a second
+quote.
+
 The secondary `os-optics account token create --profile agent --lifecycle time-limited --save --token-file
 OWNER_CREDENTIAL_FILE` path is for a credential carrying `account:token:manage`. A bounded issuer cannot issue a
 permanent token; use the signed-in Account website for that. `--save` writes to `~/.opensci/token` without printing the
 secret. `os-optics account token rotate --issuer-token-file OWNER_CREDENTIAL_FILE` replaces a token, while Account
 can revoke any of its tokens. `os-optics account logout` revokes the token in use and deletes its token file.
 
-### 2. Resolve, inspect, order
-
-```bash
-os-optics project run project.json --out-dir run
-os-optics resolve run                                  # resolution_id, Customer Purchase BOM, prices, assembly configuration
-os-optics resolve run --optics-only                    # ... only the optical elements, no mounts or breadboard
-os-optics resolve run --no-breadboard                  # ... on your own optical table (or --assembly-service)
-os-optics resolve run --mechanics derived --platform none --mounting mounting.json  # an optical system with mounts
-os-optics resolution show RESOLUTION_ID --locale zh-CN # the same for people (zh-CN or en), with the agreement
-os-optics assembly preview RESOLUTION_ID --view        # the Experimental Lab Assembly: checked here, shown in 3D
-os-optics account address list                         # the shipping addresses (mainland China), the default first
-os-optics account address add --recipient 张三 --phone 13800138000 --province 广东省 --city 深圳市 \
-    --district 南山区 --street "科技园路 1 号"                 # add one (the first becomes the default)
-os-optics order create RESOLUTION_ID                   # the Order: Order Number, total, quotation, agreement, payment
-os-optics order create RESOLUTION_ID --address ADDRESS_ID  # ... shipped to another address of the list
-os-optics order create RESOLUTION_ID --additional-order    # ... a design your organization already ordered, again
-os-optics order show ORDER_ID --locale zh-CN           # also --document quotation | contract
-```
-
-The resolution lists the OpenSci products of your system with quantities and current prices, and the assembly
-configuration: how each retained degree of freedom is provided (adjustable as designed, adjusted by hand where
-motorized adjustment was requested, or fixed -- with the reason when it is not as the design asks: `design_deviations`),
-the breadboard, the configuration notes, the clauses of the Order agreement (`agreement`; `resolution show --locale`
-renders them), the deliverables and the Orders your organization already has of the same design (`design_orders`; a
-further Order of it needs `--additional-order`).
-
-What OpenSci supplies is set by independent order options, stated in the resolution as `order_options`:
-
-| Option | `resolve` flag | Values |
-|---|---|---|
-| Mechanical supply | `--mechanics` | `derived` (default): OpenSci selects the mount, post and post holder for each optic it supplies · `none`: the optical elements only |
-| Platform | `--platform` | `breadboard` (default): the OpenSci breadboard, sized and drilled for the layout · `none`: your own optical table (M6 holes on a 25 mm grid) |
-| Assembly | `--assembly` | `customer` (default): you assemble · `opensci`: OpenSci assembles and aligns the system on the OpenSci breadboard |
-
-The familiar flags are the same options: `--optics-only` is `--mechanics none` (no mounts, posts, holders or
-breadboard, no assembly service), `--no-breadboard` is `--platform none` and `--assembly-service` is `--assembly
-opensci`. The OpenSci assembly needs OpenSci mechanics and the breadboard; a combination that cannot be supplied is
-refused before anything is sent (`PURCHASE_OPTIONS_CONFLICT`, `ASSEMBLY_SERVICE_REQUIRES_BREADBOARD`). What is
-checked and delivered follows from the options: with mechanics and a laboratory layout the assembly is checked for
-collisions, a clear beam path and its fit on the board, and the deliverable is the Detailed Assembly Drawing; without
-mechanics it is the relative Optical Layout Drawing.
-
-A Project with `design_intent` `OPTICAL_SYSTEM` has no laboratory layout: it takes no platform and no assembly service
-(otherwise `DESIGN_INTENT_HAS_NO_LAB_ASSEMBLY`). Buy it with `--optics-only`, or with OpenSci mounts per optic:
-`--mechanics derived --platform none --mounting mounting.json`, where `mounting.json` gives the beam height (above the
-surface the holders stand on) and optionally the angle of incidence of every OpenSci optic,
-`{"L1": {"beam_height_mm": 125}, "M1": {"beam_height_mm": 125, "incidence_deg": 45}}` (missing ones are refused with
-`MOUNTING_INPUT_REQUIRED`). OpenSci checks that each optic's mount, post and post holder fit together at that height
-and delivers a mounting sheet instead of an assembly drawing.
-
-Your own declared optics are components you supply: they keep their place in the design and, in a complete system, their
-declared body reserves space; `--spare SKU=N` adds spare units of an OpenSci optic of the design. A token with the `agent` profile
-is the authorization to create the Order: `order create` creates it directly. It ships to the default address of your
-organization's address book, or to `--address ADDRESS_ID`; ask the person which address to use. With no address at
-all, `order create` is refused with `SHIPPING_ADDRESS_REQUIRED` (recovery `ADD_SHIPPING_ADDRESS`): add one with
-`account address add` (editing and deleting addresses is done on the OpenSci Account website). The Order keeps a copy
-of the address. Present the Order Number, the total, the shipping address and the bank-transfer instructions to the
-person who pays.
-
-#### Ordering listed parts without a design
-
-An Agent that knows which parts it needs orders them from a part list: OpenSci part numbers and quantities, with no
-Project. Optics come from the catalog (`os-optics catalog list`), mounts, posts, post holders and breadboards from
-the mechanical listing:
-
-```bash
-os-optics products mechanical --kind MOUNT             # OS-MECH-* part numbers with their facts (--json: the document)
-os-optics resolve-parts parts.json                     # resolution_id, per-part prices, order_options (basis PART_LIST)
-os-optics resolve-parts parts.json --mechanics none    # ... the listed parts alone, whatever the file chooses
-os-optics resolution mounting-sheet RESOLUTION_ID --locale zh-CN   # per optic: mount, post, holder, steps, height
-os-optics order create RESOLUTION_ID                   # ordered like a design
-```
-
-`parts.json` lists the lines (1 to 64, quantities 1 to 100) and the mechanical supply:
-
-```json
-{"lines": [{"line_id": "L1", "opensci_sku": "OS-OPT-...", "quantity": 2},
-           {"line_id": "B1", "opensci_sku": "OS-MECH-...", "quantity": 1}],
- "mechanical_supply": "DERIVED",
- "mounting": {"L1": {"beam_height_mm": 125, "retained_dofs": [], "incidence_deg": 0}}}
-```
-
-With `"mechanical_supply": "NONE"` (the default) OpenSci supplies exactly the listed parts; with `"DERIVED"` it
-selects a mount, post and post holder for each optic unit at the beam height its `mounting` entry states (measured from
-the surface the holders stand on), keeping the adjustment axes listed in `retained_dofs` (default none) at the angle of
-incidence (default 0 degrees, 45 for mirrors and plate splitters). When the first mount cannot reach the height the
-other compatible mounts are tried; otherwise the line is refused with `MOUNTING_NOT_AVAILABLE` (`details`: `line_id`,
-`reason`, the reachable range when known). A part number OpenSci does not supply is refused with
-`PART_NOT_ORDERABLE` (`details.line_ids`, recovery `LIST_MECHANICAL_PRODUCTS`). The parts ship unassembled; the
-agreement states that OpenSci supplies the listed products and has not checked that they work together as an optical
-system (with derived mechanics: that each optic's mount, post and holder fit together at the stated height). A
-breadboard in a part list is an ordinary line. The mounting sheet (`resolution mounting-sheet` / `order mounting-sheet`,
-JSON with English and Simplified Chinese text; `--locale` prints it as text, `--out FILE` writes it) gives each
-optic's chain, the assembly order and threads, the beam-height arithmetic and the adjustment axes.
-
-#### Ordering a purchase BOM
-
-A purchase BOM lists OpenSci part numbers and quantities (`line_id` and `purpose` `PLAN | SPARE` are optional). The
-quote reviews every line:
+### 3. Quote and order a purchase BOM
 
 ```bash
 os-optics order quote bom.json                              # review + quote (resolution_id when a line can be supplied)
 os-optics order quote bom.json --confirm bom.review.json    # confirm the changes the review lists
-os-optics order create RESOLUTION_ID
+os-optics account address list                              # the shipping addresses (mainland China), the default first
+os-optics account address add --recipient 张三 --phone 13800138000 --province 广东省 --city 深圳市 \
+    --district 南山区 --street "科技园路 1 号"                      # add one (the first becomes the default)
+os-optics order create RESOLUTION_ID                        # the Order: Order Number, total, quotation, agreement, payment
+os-optics order create RESOLUTION_ID --address ADDRESS_ID   # ... shipped to another address of the list
+os-optics order show ORDER_ID --locale zh-CN                # also --document quotation | contract
+```
+
+A purchase BOM lists OpenSci part numbers and quantities -- optics (`OS-OPT-*`), mounts, posts, post holders and
+breadboards (`OS-MECH-*`) -- with `line_id` and `purpose` `PLAN | SPARE` optional:
+
+```json
+{"schema": "opensci.commercial.part_list_submission", "schema_version": "2",
+ "lines": [{"opensci_sku": "OS-OPT-...", "quantity": 2},
+           {"opensci_sku": "OS-MECH-...", "quantity": 1, "purpose": "SPARE"}]}
 ```
 
 `order quote` exits 0 when every line can be supplied (`ORDERABLE`, with the next command), 1 when some lines cannot be
-supplied as listed (`CHANGES_REQUIRED`: it writes `bom.review.json`, or `--review-out FILE`, whose proposed
-confirmation keeps the other lines; `order create` on that quote is refused with `BOM_CHANGES_UNCONFIRMED` until the
-changes are confirmed), 65 for a BOM or confirmation refused locally (nothing is sent), 67 when the service refuses
-it (`BOM_NOT_ORDERABLE` when no line can be supplied: the review is written) and 77 without a token (the other codes:
-`order quote --help`). Without a token nothing is sent, the BOM stays in its file, and the output names the Account
-registration and sign-in pages, where to save the token and the same command to run again (it sends the same request,
-so it never creates a second quote). From Python: `client.quote_bom(document)` (`os_optics.client.purchase_bom_body`,
-`review_of`, `review_document`, `confirmation_body`).
+supplied as listed (`CHANGES_REQUIRED`: a line `NOT_ORDERABLE`, `TEMPORARILY_UNAVAILABLE` or `ABOVE_LIMIT`; it writes
+`bom.review.json`, or `--review-out FILE`, whose proposed confirmation keeps the other lines and removes the changed ones
+-- edit its decisions to change a quantity or substitute a part number; `order create` on that quote is refused with
+`BOM_CHANGES_UNCONFIRMED` until the changes are confirmed), 65 for a BOM or confirmation refused locally (nothing is
+sent), 67 when the service refuses it (`BOM_NOT_ORDERABLE` when no line can be supplied: the review is written) and 77
+without a token (the other codes: `order quote --help`). `--schema-version 1` sends the earlier part-list body to a
+service that does not quote BOMs yet (no `purpose`, no confirmation); `resolve-parts PARTS.json` also sends that body.
+From Python: `client.quote_bom(document)` (`os_optics.client.purchase_bom_body`, `review_of`, `review_document`,
+`confirmation_body`).
+
+A token with the `agent` profile is the authorization to create the Order: `order create` creates it directly. It ships
+to the default address of your organization's address book, or to `--address ADDRESS_ID`; ask the person which address
+to use. With no address at all, `order create` is refused with `SHIPPING_ADDRESS_REQUIRED` (recovery
+`ADD_SHIPPING_ADDRESS`): add one with `account address add` (editing and deleting addresses is done on the OpenSci
+Account website). The Order keeps a copy of the address. Present the Order Number, the total, the shipping address and
+the bank-transfer instructions to the person who pays. `order create --additional-order` orders a BOM your organization
+already ordered, again.
 
 To withdraw an Order -- only when the person asks, and only before a transfer is reported:
 
@@ -2047,13 +2047,13 @@ os-optics order withdraw ORDER_ID                      # the Order and its data 
 ```
 
 The Order, its quotation, agreement and shipping-address copy and (unless another Order uses it) the resolution are
-deleted; its Order Number is never used again. Tell the person it was withdrawn. To change a design after ordering:
-withdraw, run the design again, order again. After a reported transfer or a payment the service refuses
+deleted; its Order Number is never used again. Tell the person it was withdrawn. To change what you buy after ordering:
+withdraw, edit the plan or the BOM, quote and order again. After a reported transfer or a payment the service refuses
 (`ORDER_NOT_WITHDRAWABLE`, recovery `CONTACT_OPENSCI`): the person contacts OpenSci. Repeating `order withdraw` after a
-withdrawal answers `ORDER_NOT_FOUND` (the Order no longer exists). A resolution that was priced but never ordered is
-deleted after 7 days: run `resolve` again to order it later.
+withdrawal answers `ORDER_NOT_FOUND` (the Order no longer exists). A quote that was never ordered is deleted after 7
+days: quote the BOM again to order it later.
 
-### 3. Pay, report, receive the Assembly Detail
+### 4. Pay and report the transfer
 
 Pay the full amount by corporate bank transfer with the exact Order Number as the transfer remark. When the person who
 paid says the transfer was made:
@@ -2062,18 +2062,15 @@ paid says the transfer was made:
 os-optics order report-transfer ORDER_ID
 ```
 
-A report is not a confirmation: OpenSci confirms receipt of the payment. After that confirmation:
+A report is not a confirmation: OpenSci confirms receipt of the payment and ships the parts.
 
-```bash
-os-optics assembly drawing RESOLUTION_ID --out drawing --locale zh-CN   # SVG, PDF, result and manifest (nothing is uploaded)
-```
-
-The summary states the drawing (`status`, `delivery_ready`, `validation`, `files`, `out`). The drawing stays on this
-computer: nothing is uploaded.
-
-Before the confirmation `assembly drawing` exits with code 75 and a JSON error whose `recovery` is
-`WAIT_FOR_PAYMENT_CONFIRMATION` (or `CREATE_ORDER_FIRST` when there is no Order yet). The drawing is written in English
-(default) or Simplified Chinese (`--locale zh-CN`); its title block names the Order Number and your organization.
+OpenSci no longer orders designs, selects mounts, assembles systems or delivers hosted previews, drawings, optical
+layouts and mounting sheets, and accepts no uploads. Against the current service `resolve`, `assembly preview
+RESOLUTION_ID`, `assembly drawing RESOLUTION_ID`, `view --resolution`, `resolution layout` / `order layout`, `resolution
+mounting-sheet` / `order mounting-sheet` and `artifacts` exit 67 with the recovery `USE_LOCAL_PLAN` and the local
+command that replaces them in `hint`; `order create` of a design resolution is refused with `ORDERING_BASIS_RETIRED`
+and `resolve-parts` with derived mechanics or another order option with `ORDER_OPTION_RETIRED`. Earlier Orders stay
+readable with `order show`.
 
 Chinese text in the drawing PDFs (`assembly_drawing.pdf`, `optical_layout.pdf`) uses the standard Chinese PDF font
 `STSong-Light` (Adobe-GB1) without embedding a font file, so the PDFs stay small and identical on every computer. A
@@ -2083,62 +2080,34 @@ Chinese editions), Chrome / Edge (PDFium), Firefox (pdf.js), macOS Preview, Suma
 (`assembly_drawing.svg`, `optical_layout.svg`) needs no PDF font: open it in any browser when a PDF viewer shows no
 Chinese text.
 
-An optics-only Order has no assembly drawing (mounts chosen per optic without a layout come with the mounting sheet,
-`order mounting-sheet ORDER_ID`): its deliverable is the Optical Layout Drawing, the relative layout of the optics (positions relative to a datum element, orientations, beam paths and spacings) to build your own mounting
-around:
-
-```bash
-os-optics order layout ORDER_ID --out layout --locale zh-CN    # optical_layout.svg / .pdf / manifest
-os-optics layout draw optical-layout.json --out layout         # the same from a package file, offline
-```
-
-`layout draw` takes the Optical Layout Package (`optical-layout.json`) those commands save. Without one it exits 65 with
-`OPTICAL_LAYOUT_PACKAGE_REQUIRED`, naming the file and the commands that write it. A run directory has no package: its 2D
-layout is `os-optics view run --section ALL --snapshot shots`.
-
 ### The same from Python
 
 ```python
+from os_optics import assembly_plan as ap
 from os_optics.client import OpenSciClient
-from os_optics.local import example_project, run_optical_project
+from os_optics.local import example_project
 
+ap.derive_plan(example_project(), out_dir="plan")      # the focus example: a source, a lens, a focal plane
+body, report = ap.purchase_bom("plan")                  # the plan's purchase BOM
 client = OpenSciClient.from_environment()
-run = run_optical_project(example_project(), output_dir="run")
-resolution = client.submit(run)
-rid = resolution["resolution_id"]
-preview = client.assembly_preview(rid)                  # opened in memory
-validation = client.validate_assembly(preview)
-order = client.create_order(rid)["order"]
+quote = client.quote_bom(body)                          # its line review and prices
+order = client.create_order(quote["resolution_id"])["order"]
 # client.withdraw_order(order["order_id"])  # only when the person asks, before a transfer is reported
 # ... the customer pays; when they say the transfer was made:
 client.report_bank_transfer(order["order_id"])
-# ... after OpenSci has confirmed the payment:
-drawing = client.assembly_drawing(rid, "drawing", preview=preview)
-# (drawings stay on this device; nothing is uploaded)
+drawing = ap.plan_drawing("plan", "drawing")           # the drawing stays on this computer
 ```
 
-A submission sends the run's Project and Local Validation record; it needs the run's `manifest.json`, `project.json`,
-`engine_request.json`, `simulation_result.json` and `local_validation.json`, which vouch for them. The optical scene, its
-GLB and the ray data may be absent; when present they are checked too.
+Repeating a call is safe: BOM quotes, Orders and payment reports carry an idempotency key derived from their input, so
+a repeat returns the first result (`replayed: true`). Every failure is an `OpenSciApiError` with `code`, `message`,
+`details`, `recovery` (what to do next), `http_status` and `request_id`. Keep your token out of chats, logs and shared
+files; if it leaks, `os-optics account logout` revokes it. The engine writes only what you ask for: the plan directory,
+run directories, drawings, BOM and review files, snapshot images and your token file (`--save`, readable only by you).
 
-Repeating a call is safe: submissions, BOM quotes, Orders and payment reports carry an idempotency key derived from their
-input, so a repeat returns the first result (`replayed: true`). Every failure is an `OpenSciApiError` with `code`,
-`message`, `details`, `recovery` (what to do next), `http_status` and `request_id`.
-
-### The Order's assembly data on your machine
-
-The Experimental Lab Assembly and the Assembly Detail are delivered encrypted for one Project and opened in memory;
-the engine writes no copy of them. It writes what you ask for: the run directory, the validation JSON (`--out`), the
-drawing files (`--out DIR`), snapshot images, and your token file (`--save`, readable only by you). Use the assembly
-data for viewing, checking and assembling that Project and for its Detailed Assembly Drawing; do not redistribute it.
-Keep your token out of chats, logs and shared files; if it leaks, `os-optics account logout` revokes it.
-
-Exit codes of the commercial commands: 0 done (for `assembly drawing`: the Detailed Assembly Drawing was written),
-2 `assembly drawing --diagnostic` wrote the diagnostic sheet (the local assembly check did not pass: `status` and
-`delivery_ready` say so), 64 usage / file error, 65 unusable local input or delivery (also a local assembly check that
-did not pass without `--diagnostic`: nothing is written or uploaded), 67 refused by OpenSci, 69 OpenSci unreachable, busy or rate-limited (recovery `RETRY_LATER`: send the
-same request again after `retry_after_seconds`), 75 not available yet (e.g. the Assembly Detail before the payment is
-confirmed), 77 token missing, expired, revoked or without the needed scope, 78 `OPENSCI_API_URL` missing.
+Exit codes of the commercial commands: 0 done, 1 `order quote` answered `CHANGES_REQUIRED`, 64 usage / file error, 65
+unusable local input (nothing is sent), 67 refused by OpenSci (also a retired route or option), 69 OpenSci unreachable,
+busy or rate-limited (recovery `RETRY_LATER`: send the same request again after `retry_after_seconds`), 75 not available
+yet, 77 token missing, expired, revoked or without the needed scope, 78 `OPENSCI_API_URL` missing.
 
 ### Send feedback to OpenSci
 
@@ -2169,8 +2138,9 @@ per organization per day: above that the service answers `FEEDBACK_RATE_LIMITED`
 package objects and files directly: `load_assembly_preview(source)` verifies a package (manifest, digests, schema,
 geometry) and `validate_assembly_layout(package)` runs the local assembly check (`AssemblyLocalValidationV1`);
 `generate_assembly_drawing(preview, detail)` draws; `validation_artifact_upload` / `drawing_artifact_upload` build
-the upload (manifest + exact file bytes) that the artifact routes accept. The `os-optics assembly verify |
-validate | draw | verify-drawing` commands do the same on files.
+the upload (manifest + exact file bytes) an earlier service's artifact routes accepted (the current service accepts no
+uploads). The `os-optics assembly verify | validate | draw | verify-drawing` commands do the same on files; `assembly
+draw PACKAGE --design-bom FILE` draws a local plan's package with its design BOM.
 
 ## Low-level Engine API
 
@@ -2204,8 +2174,9 @@ print(result.status.value, result.targets[0].value)    # the focused 1/e² beam 
 | `os_optics.composition` | reusable layouts: workspaces, `import_layout`, `select`, `transform`, editing groups, `replace_instance`, `batch`, `export_module`, `run_workspace`, `workspace_status` |
 | `os_optics.results` | the scientific results of a run: `load_run`, target outcomes (`targets()`), monitors, beams, paths, power budget, rays, wavefront, irradiance map, metric descriptors, CSV / JSONL / JSON / NPZ export |
 | `os_optics.catalog` | the local catalog store: `status`, `check`, `sync`, `verify`, `import_release` |
-| `os_optics.viewer` | first-party local 3D viewer: `view_run`, `view_assembly`, `render_snapshots`, `scene_summary` |
-| `os_optics.client` | `OpenSciClient`: the commercial workflow with your Account token (resolution, Order, payment report, assembly data, drawing, artifacts, tokens) |
+| `os_optics.viewer` | first-party local 3D viewer: `view_run`, `view_plan`, `view_assembly`, `render_snapshots`, `scene_summary` |
+| `os_optics.assembly_plan` | local assembly plans: `derive_plan`, `open_plan` (edit, check, history), `check_plan`, `plan_preview`, `plan_drawing`, `design_bom`, `purchase_bom`, `apply_plan_ops`, `load_mechanical_catalog` |
+| `os_optics.client` | `OpenSciClient`: the commercial workflow with your Account token (purchase BOM quote and review, Order, payment report, addresses, tokens, feedback) |
 | `os_optics.optical_view` | the Optical Simulation View builder and GLB writer (used by `run_optical_project`); the layout of a Project without a run (`layout.py`, `json_api.project_layout`) |
 | `os_optics.assembly` | local assembly check of an Assembly Preview Package |
 | `os_optics.assembly_drawing` | local Detailed Assembly Drawing (SVG / PDF + result / manifest) from a preview + detail package |

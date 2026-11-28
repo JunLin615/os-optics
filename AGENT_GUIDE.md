@@ -38,6 +38,34 @@ PROJECT` and `results configurations RUN`.
 `project run` reports progress on stderr; Ctrl-C stops it (exit 130, `run_stopped.json`; other files are kept).
 Details: [results](docs/en/results.md).
 
+## Plan the assembly, buy the parts
+
+The next release (0.15.0, in development; not yet on PyPI) plans the mounting locally
+and buys parts as a BOM. No token and no network are needed until the quote:
+
+```bash
+os-optics assembly plan derive project.json --out plan
+os-optics assembly plan show plan --items
+os-optics assembly plan edit plan --ops ops.json --op-id ID --expect-base DIGEST
+os-optics assembly plan check plan
+os-optics view plan --no-browser --snapshot shots
+os-optics assembly plan draw plan --out drawing
+os-optics assembly plan bom plan --purchase --out bom.json
+os-optics order quote bom.json
+```
+
+A plan with findings is still written. Read `status.state` (`READY`,
+`READY_WITH_WARNINGS`, `INCOMPLETE`, `HAS_ERRORS`; exit 0, 0, 2, 1) and each finding's
+items, interface and basis before editing. Edits are atomic. `--op-id` replays safely.
+`--expect-base` refuses an edit when the head changed. Moving an optic marks the
+bound run `STALE`; `assembly plan run-optics` binds a new one. `order quote` exits 1
+for `CHANGES_REQUIRED`: show the changed lines to the person, then confirm with
+`--confirm bom.review.json`. Without a token it sends nothing and prints the sign-in
+pages and the same command to resume. OpenSci checks supply only, never fit; it does
+not assemble. `resolve` and hosted previews and drawings are retired (exit 67,
+recovery `USE_LOCAL_PLAN`). Details: [assembly plans](docs/en/assembly-plan.md),
+[hardware](docs/en/hardware.md).
+
 ## Tools, cases and skills
 
 ```bash

@@ -8,11 +8,12 @@
 2. [运行第一个设计](getting-started.md)：生成项目、运行仿真、打开三维视图。
 3. [使用光学目录](catalog.md)：查找元件、管理版本、复现项目。
 4. [读取与导出结果](results.md)：验证状态、退出码、光束数据、成像质量与鬼像分析、可视化和 CSV 导出。
-5. [继续完成硬件实现](hardware.md)：本地装配方案、采购清单、报价和下单。
-6. [机械目录](mechanical-catalog.md)：本地装配方案使用的镜架、立杆、杆座和面包板。
-7. [设计研究与工作流程](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md)（os-optics-kit）：按标识修改项目、参数扫描、运行比较、绘图、报告、灵敏度与公差分析，以及三个参数化光学工作流程。
-8. [分析测量数据](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md)（os-optics-kit）：背景扣除、参考归一化、线性拟合及残差图。
-9. [联用外部科学工具](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md)（os-optics-kit）：用 SciPy、Optuna、SALib、LightPipes、prysm、POPPY、Perceval、Piquasso 和 grcwa 完成优化、衍射、量子光子学和超表面元件计算。
+5. [规划装配](assembly-plan.md)：在本机推导、编辑、检查、绘制装配方案并采购所需零件。
+6. [继续完成硬件实现](hardware.md)：本地装配方案、采购清单、报价和下单。
+7. [机械目录](mechanical-catalog.md)：本地装配方案使用的镜架、立杆、杆座和面包板。
+8. [设计研究与工作流程](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/workflows.md)（os-optics-kit）：按标识修改项目、参数扫描、运行比较、绘图、报告、灵敏度与公差分析，以及三个参数化光学工作流程。
+9. [分析测量数据](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/measurements.md)（os-optics-kit）：背景扣除、参考归一化、线性拟合及残差图。
+10. [联用外部科学工具](https://github.com/JunLin615/os-optics-kit/blob/main/docs/zh-CN/interop.md)（os-optics-kit）：用 SciPy、Optuna、SALib、LightPipes、prysm、POPPY、Perceval、Piquasso 和 grcwa 完成优化、衍射、量子光子学和超表面元件计算。
 
 ## 案例、工具与技能
 
@@ -28,6 +29,6 @@
 
 每个案例注明是否使用光学目录，以及验证时使用的引擎和目录版本。os-optics-kit 需安装在 os-optics 所在的同一 Python 环境中：`python -m pip install os-optics-kit`。
 
-这些指南对应 **os-optics 0.14.0**；匹配的安装方式见[版本匹配说明](installation.md#让文档与安装版本一致)。命令参数可通过 `--help` 查看；Python API 说明可查阅已安装的软件包和 [PyPI 参考文档](https://pypi.org/project/os-optics/)。
+这些指南对应 **os-optics 0.14.0**；本地装配方案、机械目录和采购清单页面对应下一版本（0.15.0，开发中）；匹配的安装方式见[版本匹配说明](installation.md#让文档与安装版本一致)。命令参数可通过 `--help` 查看；Python API 说明可查阅已安装的软件包和 [PyPI 参考文档](https://pypi.org/project/os-optics/)。
 
 [OpenSci 官网](https://opensci-optics.com/) · [软件包版本](https://pypi.org/project/os-optics/#history) · [交流与反馈](https://github.com/JunLin615/os-optics/issues/new/choose)

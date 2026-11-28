@@ -35,7 +35,8 @@ os-optics account status
 
 ```bash
 os-optics assembly plan derive project.json --out plan
-os-optics assembly plan preview plan --out preview.zip --view
+os-optics assembly plan preview plan --out preview.zip
+os-optics view plan
 os-optics assembly plan draw plan --out drawing --locale zh-CN
 os-optics assembly plan bom plan --purchase --out bom.json
 ```
