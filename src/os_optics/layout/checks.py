@@ -85,7 +85,7 @@ def run_layout_checks(project: ProjectSnapshot, cfg: NumericalConfig, trace: Tra
     poses: dict[str, Pose] = {c.instance_id: _lower_pose(c.pose, cfg, f"component:{c.instance_id}") for c in project.components}
     placed: dict[str, G.Placed] = {}
     for comp in project.components:
-        pl = G.place(comp, poses[comp.instance_id], cfg.quaternion_norm_tol)
+        pl = G.place(comp, poses[comp.instance_id])
         if pl is None:
             continue
         err = G.validity_error(pl.footprint, tol)
