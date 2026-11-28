@@ -17,6 +17,15 @@ from .contract import (PLAN_SCHEMA_ID, PLAN_SCHEMA_VERSION, AssemblyPlanContentV
 from .mechanical import MechanicalCatalogError, MechanicalSources, PublicMechanicalCatalogV1, load_mechanical_catalog
 
 
+def open_plan_view(plan_dir, *, revision=None, mechanical=()):
+    """``(revision, context, findings)`` of a plan directory for ``os-optics view PLAN_DIR``
+    (``workflow.open_plan_view``; a module attribute of its own, so the viewer finds it without loading the workflow)."""
+
+    from .workflow import open_plan_view as opener
+
+    return opener(plan_dir, revision=revision, mechanical=mechanical)
+
+
 def __getattr__(name: str):
     """The plan workflow API, imported on first use (it loads the kernel, the projection and the local workflow)."""
 
@@ -29,7 +38,7 @@ def __getattr__(name: str):
 
 #: Lazily imported names -> their module.
 _LAZY = {
-    "derive_plan": ".workflow", "open_plan": ".workflow", "open_plan_view": ".workflow", "apply_plan_ops": ".workflow",
+    "derive_plan": ".workflow", "open_plan": ".workflow", "apply_plan_ops": ".workflow",
     "OpenPlan": ".workflow", "PlanResult": ".workflow", "check_plan": ".workflow", "plan_preview": ".workflow",
     "plan_drawing": ".workflow", "design_bom": ".workflow", "purchase_bom": ".workflow", "PlanContext": ".context", "plan_context": ".context",
     "project_plan_package": ".projection", "project_plan": ".projection", "PlanProjectionInputs": ".projection",
