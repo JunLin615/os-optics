@@ -89,10 +89,11 @@ class SourceLocation:
     column: str | None = None
     surface: str | None = None
     section: str | None = None
+    configuration: int | None = None
 
     def as_dict(self) -> dict[str, object]:
         data: dict[str, object] = {}
-        for key in ("row", "column", "surface", "section"):
+        for key in ("row", "column", "surface", "section", "configuration"):
             value = getattr(self, key)
             if value is not None:
                 data[key] = value
@@ -100,6 +101,8 @@ class SourceLocation:
 
     def describe(self) -> str:
         parts = []
+        if self.configuration is not None:
+            parts.append(f"configuration {self.configuration}")
         if self.row is not None:
             parts.append(f"row {self.row}")
         if self.column is not None:
@@ -111,7 +114,7 @@ class SourceLocation:
     def at(self, column: str) -> SourceLocation:
         """The same row and surface, column ``column``."""
 
-        return SourceLocation(row=self.row, column=column, surface=self.surface, section=self.section)
+        return SourceLocation(row=self.row, column=column, surface=self.surface, section=self.section, configuration=self.configuration)
 
 
 @dataclass(frozen=True)

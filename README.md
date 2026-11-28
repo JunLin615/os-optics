@@ -60,7 +60,7 @@ Most optical tools force a trade-off between closed, seat-locked commercial GUIs
 - **Natively parallel & built for multi-agent swarms** — The simulation core is completely stateless, I/O-free, and free of GUI or license-seat locks. Spawn dozens of parallel worker processes, containers, or an **agent swarm** to explore competing lens topologies and parameter branches concurrently — then merge and compare candidates objectively via canonical JSON outputs, deterministic exit codes, and SHA-256 hashes.
 - **Seamless interop with Python diffraction, quantum & optimization libraries** — Keep the engine core ultra-light while plugging into the wider scientific Python stack through built-in data contracts (`os-optics interop list`): hand off transverse beam fields to **LightPipes / prysm / POPPY / Diffractio**, export lossy linear optical networks with per-path group delays to **Perceval / Piquasso / QuTiP**, import **grcwa / meent** metasurface unit-cell models, or drive loops with **SciPy / Optuna / SALib**.
 - **Deterministic physics with honest validity bounds (`value_basis`)** — Every number reports whether it is a `MODEL` value, a proven `LOWER_BOUND` / `UPPER_BOUND`, or an `ESTIMATE` beyond a model limit. Targets outside model scope are flagged `INDETERMINATE`, never silently disguised as `PASS`.
-- **Real component catalog + custom prescriptions** — Sync a versioned, offline-first catalog of 3,000+ real optical components (`OS-OPT-*`), or declare custom lenses, even aspheres, freeforms (Zernike / XY polynomial / biconic), crystals, and CSV lens prescriptions in the same engine.
+- **Real component catalog + custom prescriptions** — Sync a versioned, offline-first catalog of 3,000+ real optical components (`OS-OPT-*`), or declare custom lenses, even aspheres, freeforms (Zernike / XY polynomial / biconic), crystals, and CSV lens prescriptions in the same engine. [Open a sequential prescription as a Project](docs/engine/PRESCRIPTION_IMPORT.md).
 - **Agent-native CLI & in-memory evaluation loops** — Every command speaks structured JSON with self-describing schemas (`os-optics capabilities`, `os-optics schema`). Use selective evaluation (`os-optics project evaluate` / `EvaluationSession`) to score candidates in memory while reusing compiled optics and catalog data across iterations.
 - **Ultra-light pure Python core** — Installs in seconds on Windows, macOS, and Linux (Python 3.11+) with only `numpy`, `scipy`, `pydantic`, and `shapely`. No compiler, no license server, no GPU requirement, and no account needed.
 
@@ -266,7 +266,7 @@ Contributions and discussions are welcome in English or Chinese!
 **Key areas where community issues & PRs are especially welcome:**
 
 - **Surface & medium extensibility** — Modularizing tracer/surface dispatch and adding new optical elements (e.g., DMD / SLM models, diffractive optical elements).
-- **File format interoperability** — Importers/exporters for common optical prescription formats (e.g., `.zmx`, STEP/CAD alignment helpers).
+- **File format interoperability** — Additional prescription records, export formats, and STEP/CAD alignment helpers.
 - **Optimization & merit-function helpers** — Native optimization and multi-agent search workflows built on `EvaluationSession`.
 - **Worked optical cases & agent skills** — Contribute reproducible designs and skills directly to [os-optics-kit](https://github.com/JunLin615/os-optics-kit) (your agent can package a finished design as a PR with `os-optics-kit contrib case`).
 

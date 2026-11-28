@@ -1,0 +1,35 @@
+# Reference traces for sequential `.zmx` files
+
+The tests open each original prescription, save the resulting Project, reopen it from disk, and run the native ray trace. All three designs use millimetres, air at 20 °C and 101325 Pa. The source wavelengths are specified in air. The visible F, d and C lines (486.1327, 587.5618 and 656.2725 nm) correspond to 486.266176, 587.721865 and 656.450687 nm in vacuum. Source and image coordinates below use the file's optical axis. [Reference tests](../tests/test_zmx_references.py)
+
+## Dry objective with a signed stop spacing
+
+Daniel J. Reiley's file traces light from the collimated tube side to a finite specimen in air. It has six lens groups and a separate aperture stop. Surface 9 lies at `z = 32.8244476161923` mm and has a 3.175969659564 mm clear radius. Its following `DISZ` is **−0.02444761619235 mm**, so the vertex of surface 10 lies at `z = 32.8000000000000` mm. The curved surface clears the stop at its rim. Both the stop and the lens retain their physical positions in the ray tests. The original file carries Reiley's 2014 MIT notice. [Original source](https://drive.google.com/file/d/1MWPnXl4DRdw1cMkHBWQD-Y8UZpcHtB0E/view) · [Fixture](../tests/fixtures/zmx/US04384765-1.zmx)
+
+| Quantity | Reference | Conditions |
+| --- | ---: | --- |
+| Effective focal length | 1.83093950 mm | d line, first-order power of the six refracting groups |
+| Specimen working distance | 0.2788013426282 mm | Last vertex to the prescribed specimen, both in air |
+| Image height at +5° | 0.1566543730 / 0.1576703090 / 0.1582325256 mm | F / d / C lines, incident ray aimed at the primary-wavelength paraxial entrance pupil |
+| Incoming height at the stop limit | 1.52578292054 mm | On-axis parallel ray in the d line, bisected until it reaches the stop rim |
+| Specimen-side NA at the rim | 0.83539084 | `n_air × sin(u)`, where `sin(u) = 0.83516332` |
+
+The independent ray calculation intersects the meridional ray with each sphere using the root on the vertex hemisphere, and propagates to planes with their signed axial coordinates. At each interface it scales the direction tangent to the surface by the ratio of the two relative indices, then chooses the forward normal component of the unit vector. The +5° comparison uses the same incident ray for each wavelength. At the first vertex plane its extrapolated height is −0.909927 mm. The tests compare the resulting specimen heights to 0.0000001 mm. Moving only the on-axis probe to 99.9% of the limiting entrance height yields NA 0.83454857. Moving it to 100.1% terminates the ray at the physical stop.
+
+The source specifies image-space f/0.6. The patent states nominal NA 0.95 and a 0.28 mm specimen spacing. Reiley's source uses an explicit stop opening, which determines the NA in the table. For the independent first-order comparison, the matrix uses the six powered groups. The native paraxial component-list analysis requires increasing vertex order for transmitted elements and refuses the lens vertex behind the stop. The geometric trace verifies clipping with both components present. [US4384765A, Table I](https://patents.google.com/patent/US4384765A/en) · [Collection summary, nominal 1.8 mm focal length](https://docs.google.com/spreadsheets/d/1rQXG2WHnpok8WHUuZvn-cklhiCm1qa1o5zEqmoUXk4A/edit)
+
+## Finite-conjugate dry objective
+
+The Mercado patent example uses a finite object 12.893 mm before the first vertex, object heights of 0 and 0.5 mm, and object-space NA 0.25. Its stop is on a powered surface. The final vertex is at 15.048 mm and the prescribed image plane is at 185.048 mm. At the d line the source report gives EFL **16.32088 mm**, BFL **6.822254 mm** and paraxial conjugate magnification **−10.0232**. The latter refers to the paraxial conjugate plane, 170.40969 mm past the final vertex. At the prescribed 170 mm image distance, a ray from the +0.5 mm object point aimed at the paraxial entrance pupil (`z = 17.71415` mm) reaches `y = −5.00309126` mm. The independent spherical trace uses the report's d-line relative indices of 1.6515987832 for LAC7 and 1.4338492788 for CAF2. [Original source](https://api.github.com/repos/nzhagen/LensLibrary/git/blobs/bebd4075ab24021385283651d7d332721e5e3f14) · [Independent prescription report](https://github.com/nzhagen/LensLibrary/blob/86b2c0cac5a67e2112d58518230c4d8728154f4e/prescription_files/5000548a.txt) · [Fixture](../tests/fixtures/zmx/5000548a.zmx)
+
+## Keck folded two-mirror telescope
+
+The first source surface defines `z = 0`. The annular primary vertex is at 17500 mm. Reflection followed by `DISZ −15394.985` places the secondary at 2105.015 mm. The second reflection sends light back toward the image at 20000.019428058 mm. The primary's physical aperture spans radii 1000–5480 mm. The source's entrance pupil diameter is 10949 mm. The probe enters parallel to the axis at a radius of 3240 mm, hits the primary then the secondary, and passes through the primary's central hole on the way to the image. At 1000.269461 nm in vacuum the cardinal-point table gives EFL **149583.028437 mm**. The general lens data give BFL **17895 mm** from the secondary. At +0.02° the traced image height is 52.214475 mm, 0.000145 mm above the reported paraxial height of 52.21433 mm. [Original source](https://api.github.com/repos/nzhagen/LensLibrary/git/blobs/b705a58f75f56e458f580b8f3563ec2cf2629e74) · [Independent prescription report](https://github.com/nzhagen/LensLibrary/blob/86b2c0cac5a67e2112d58518230c4d8728154f4e/prescription_files/Keck_f13.txt) · [Fixture](../tests/fixtures/zmx/Keck_f13.zmx)
+
+## Reproduce the comparisons
+
+The two microscopes use the accompanying native optical catalog. It contains ten catalog records for nine designations, each tagged with its original catalog. The refractive indices come from Sellmeier or power-series equations evaluated at air wavelengths. Mercado lists INFRARED and selects its CAF2 record. Reiley lists MISC and selects that catalog's CAF2 record. Both CAF2 records cite the *Handbook of Optics*, vol. II, and give the same six dispersion coefficients at 20 °C. The Mercado test also checks the three relative indices from the companion prescription report against the actual ray segments. The index reference is air at 20 °C and 101325 Pa, and the fixture limits the laws to 450–700 nm in air. Its single synthetic mirror satisfies the catalog schema's product requirement. The Keck and Mercado sources carry Nathan Hagen's LensLibrary MIT license. [Glass catalog](../tests/fixtures/zmx/microscope-glasses.json) · [License](../tests/fixtures/zmx/LensLibrary-LICENSE.txt)
+
+```sh
+python -m pytest tests/test_zmx_references.py -q
+```

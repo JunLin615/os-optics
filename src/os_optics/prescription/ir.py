@@ -1,30 +1,28 @@
 """The format-neutral intermediate representation (IR) of a sequential lens prescription.
 
-Every prescription format (``csv-surface-table/1`` today; Zemax, CODE V or OSLO surface data later) is read into this IR,
+Every supported sequential prescription is read into this IR,
 and only the IR is lowered to the Project's native optical models (``lowering.py``). A format adapter therefore only
 reads text: units, sign conventions, element grouping, geometry checks and the native model are the same for every
 format.
 
 Conventions (binding for every adapter):
 
-* **Sequential and coaxial.** Surfaces are listed in the order light meets them, all centred on one straight optical
-  axis (+Z, the direction light travels). There are no decentres, tilts or coordinate breaks; an adapter refuses them.
+* **Sequential and coaxial.** Surfaces use a common coordinate frame with an initial propagation direction of +Z.
+  Reflection reverses the propagation direction. An adapter diagnoses unsupported decentres, tilts and coordinate breaks.
 * **Lengths in millimetres.** An adapter converts the file's unit to mm exactly (``to_mm``: 1 in = 25.4 mm, 1 cm = 10 mm,
   1 m = 1000 mm) and keeps every value an exact ``Decimal`` -- never a binary float.
 * **Radius sign.** ``radius_mm`` is the signed vertex radius of curvature, positive when the centre of curvature lies
-  after the surface (on its +Z side), negative when it lies before it; absent for a plane. This is the convention of
-  Zemax OpticStudio, CODE V and OSLO, and exactly the convention of the native ``PrescriptionSurfaceV1.radius_mm``
-  (positive when the centre of curvature lies on the +Z side), so a radius is copied unchanged.
+  on the surface's +Z side and negative on its −Z side. A plane has no radius. The sign is converted to the member's
+  local frame during lowering.
 * **Profile.** ``z(r) = c r^2 / (1 + sqrt(1 - (1 + k) c^2 r^2)) + A4 r^4 + A6 r^6 + ... + a r`` with ``c = 1 / radius``,
   ``k = conic``, ``aspheric_mm = (A4, A6, ...)`` in mm units (``A_2n`` in mm^(1 - 2n)) and ``linear_sag = a``, the
   axicon term (a cone of slope ``dz / dr = a``, dimensionless: it does not scale with the length unit); a cylinder
   (``cylinder_axis`` X or Y: the local axis it is straight along) measures ``r`` across its straight axis and may carry
   a conic, aspheric terms (an acylinder) or an axicon term (a roof). A two-variable sag shape (``sag``: ``IrSagShape``) adds
   to this profile (Zernike, XY polynomial) or replaces it (biconic, toroid).
-* **Thickness.** ``thickness_mm`` of a surface is the axial distance from its vertex to the next surface's vertex; it
-  must be positive. The last surface's thickness only says where the image is (the distance from its vertex to the
-  image surface): any finite value (zero, or negative for an image before the last surface), ``None`` when not stated,
-  or an image at infinity (``Prescription.image_at_infinity``, an afocal prescription). It is never geometry.
+* **Thickness.** ``thickness_mm`` is the signed displacement of the next vertex in the fixed frame. A reflected
+  return leg can travel toward −Z. Dummy and stop vertices can also have a negative spacing on a forward leg.
+  The final displacement locates the image. ``Prescription.image_at_infinity`` marks an infinite image conjugate.
 * **Material.** ``material`` of a surface is the medium after it (between it and the next surface); ``None`` is air.
   The medium before the first surface and after the last one is air.
 * **Apertures.** ``clear_semi_diameter_mm`` is the radius of the surface's clear aperture (required: it is never
@@ -269,6 +267,10 @@ class IrSurface:
     is_stop: bool = False
     coating: CoatingRef | None = None
     comment: str | None = None
+    is_mirror: bool = False
+    hole_radius_mm: Decimal | None = None
+    has_clear_aperture: bool = False  # explicit aperture also clips light on an otherwise inert air plane
+    automatic_mechanical_edge: bool = False  # a computed body outline can extend beyond the polished profile
 
     @property
     def is_plane(self) -> bool:
@@ -321,7 +323,7 @@ class Prescription:
 
     **Wavelengths.** Every wavelength of the IR (``band_nm``, coating nodes) is a *vacuum* wavelength: an adapter whose
     format writes air wavelengths converts them once (``wavelengths_in`` records how the file wrote them, ``AIR``: air of
-    ``environment``, the OpticStudio convention -- wavelengths measured in air at the system temperature and pressure).
+    ``environment`` at the system temperature and pressure).
     A material definition states its own law convention (``MaterialDefinition.index_reference``). ``environment``: the
     reference environment the prescription states (``None``: it states none; the Project's own environment applies).
     ``glass_catalogs``: the catalogue order the prescription states (maker codes or catalogue names, first preferred),
@@ -347,6 +349,19 @@ class Prescription:
     #: Extra columns not read: ``(section, column as written, reason)``, reason ``DECLARED`` (named by the caller) or
     #: ``BLANK`` (blank in every row).
     ignored_columns: tuple[tuple[str, str, str], ...] = ()
+    #: Vacuum wavelengths in source order, with relative weights and a zero-based primary index.
+    wavelengths_nm: tuple[Decimal, ...] = ()
+    wavelength_weights: tuple[Decimal, ...] = ()
+    primary_wavelength_index: int = 0
+    field_location: SourceLocation | None = None
+    wavelength_location: SourceLocation | None = None
+    object_na: Decimal | None = None
+    entrance_pupil_diameter_mm: Decimal | None = None
+    image_f_number: Decimal | None = None
+    image_semi_diameter_mm: Decimal | None = None
+    fields: tuple[tuple[Decimal, Decimal], ...] = ()
+    field_type: str = "angle"  # field angles in degrees, or object heights in mm for "height"
+    field_weights: tuple[Decimal, ...] = ()  # per-field merit weights in source order
 
 
 __all__ = [

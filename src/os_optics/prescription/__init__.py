@@ -1,4 +1,7 @@
-"""Prescription import: an external sequential lens prescription -> the Project's native optical models.
+"""Import sequential optical prescriptions as native models.
+
+``read_prescription_project(path, *, catalog=None)`` opens a supported file as a standalone Project with
+editable elements, field probes, and the prescribed image plane or configuration states.
 
 ``import_prescription(text, format="csv-surface-table/1", ...)`` reads the text with the format's adapter into the
 format-neutral IR (``ir.Prescription``), resolves its glasses and coatings (``glass.py``) and lowers it (``lowering.py``)
@@ -124,6 +127,9 @@ def _assumptions(rx: Prescription, unit_assumptions: tuple[str, ...], band_basis
         f"{decimal_to_string(MM_PER_UNIT[unit])} mm).",
         "Frame: the unit's origin is the first surface's vertex; each element is placed along +Z at the sum of the spacings before it.",
     ]
+    if any(s.is_mirror for s in rx.surfaces):
+        items[:2] = ["Light enters along +Z and reverses direction at each mirror.",
+                     "Radius and vertex spacing use the same fixed Z axis on both legs of the path."]
     if rx.object is None:
         items.append("The prescription has no object surface.")
     elif rx.object.infinite:
@@ -201,6 +207,15 @@ def import_prescription(text: str | bytes, *, format: str = CSV_SURFACE_TABLE, m
     problems.raise_if_any()
     rx = READERS[format](_text(text), default_unit=unit, requested_unit=None if units is None else unit,  # type: ignore[arg-type]
                          ignore_columns=tuple(ignore_columns))
+    return _import_models(rx, model_id=model_id, catalog=catalog, glass_source=glass_source,
+                          wavelength_band_nm=wavelength_band_nm, edge_review_ratio=edge_review_ratio)
+
+
+def _import_models(rx: Prescription, *, model_id: str = DEFAULT_MODEL_ID,
+                   catalog: PublicOpticalCatalogV2 | CatalogSource | None = None, glass_source: str = "catalog",
+                   wavelength_band_nm: tuple[Decimal, Decimal] | None = None,
+                   edge_review_ratio: float | None = None) -> PrescriptionImport:
+    problems = ProblemList()
     warnings: list[ImportWarning] = list(rx.warnings)
     band, stated_by = rx.band_nm, "stated in the file"
     if wavelength_band_nm is not None:
@@ -374,7 +389,10 @@ def merge_into_project(project: Any, imported: PrescriptionImport, *, instance_i
         raise refuse(_E.PROJECT_INVALID, f"the Project with the import is not valid: {_contract_text(exc)}") from None
 
 
+from .project import read_prescription_project
+
 __all__ = [
+    "read_prescription_project",
     "CSV_SURFACE_TABLE",
     "DEFAULT_MODEL_ID",
     "PRESCRIPTION_FORMATS",

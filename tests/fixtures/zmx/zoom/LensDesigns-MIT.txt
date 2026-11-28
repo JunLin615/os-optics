@@ -1,0 +1,48 @@
+lens-designs.com — licence notice for the imported collection
+================================================================
+
+Source: https://www.lens-designs.com/  (Dan Reiley's collection of optical designs)
+Licence statement: https://www.lens-designs.com/note-on-ip
+Files imported from the site's Google Drive folders, read on 2026-11-27.
+
+The site states, in "A note on intellectual property":
+
+    Unless otherwise noted in a file's Notes section, all files posted to
+    this site contain the "MIT License," which is a permissive license,
+    commonly use in the Open Source software community.
+
+    The optical designs described on this site must all be in the public
+    domain. [...] Optical designs described in Patent Literature are, by
+    definition, public domain.
+
+Every file in this collection carries no Notes section, so the site's default
+MIT licence applies to each design file. The optical prescriptions themselves
+are transcriptions of patent or journal publications, which the site states are
+public domain.
+
+The MIT licence text the statement refers to:
+
+    MIT License
+
+    Copyright (c) Dan Reiley, lens-designs.com
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+A record's `collection.source_input` names the file it came from, and
+`collection.source_input_sha256` pins the bytes that were read.
