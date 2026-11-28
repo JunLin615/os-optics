@@ -17,6 +17,8 @@ from .ir import (
 FORMAT_ID = ".zmx"
 _MAX_RECORD_INDEX = 1_000_000
 _MAX_DECIMAL_EXPONENT = 300
+# ENVD supplies Celsius. The air model requires an absolute temperature above zero.
+_ABSOLUTE_ZERO_C = Decimal('-273.15')
 # File, drawing, optimization and analysis settings which do not change the frozen sequential geometry.
 _HEADER_METADATA = set("VERS LANG NOTE PFIL SDMA OMMA ROPD PICB GLRS GSTD NSCD COFN HYPR LUID MAZH VOLF".split())
 _SURFACE_METADATA = set("COMM HIDE MIRR SLAB POPS".split())
@@ -141,7 +143,7 @@ def _environment(header: _Block) -> ReferenceEnvironment:
     if rec is None:
         return ReferenceEnvironment(STANDARD_TEMPERATURE_C, STANDARD_PRESSURE_PA)
     temperature, pressure = rec.number(), rec.number(1) * STANDARD_PRESSURE_PA
-    if temperature <= Decimal("-273.15") or pressure < 0:
+    if temperature <= _ABSOLUTE_ZERO_C or pressure < 0:
         raise refuse(E.VALUE_INVALID, "invalid operating temperature or pressure", rec.where)
     if len(rec.args) > 2 and rec.number(2):
         raise rec.unsupported("requires thermal scaling of the source geometry")
