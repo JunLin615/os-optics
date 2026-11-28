@@ -29,12 +29,12 @@ from .contract import (CUSTOMER_TABLE_SKU, AssemblyPlanContentV1, AssemblyPlanEr
                        FrameBasisV1, ItemIdentityKindV1, ItemPrefixV1, ItemRoleV1, MountingV1, OpResultV1, PlanOpErrorCode,
                        PlanOriginV1, RangeKindV1, ROTATION_RANGE_KINDS, SupplyReasonV1, SupplyV1, content_payload, item_id_parts,
                        normalize_numbers)
-from .chain import ChainPlacement, place_single_chain, replace_chain
+from .chain import SLOT_TOLERANCE_MM, ChainPlacement, board_holes, hole_xy, place_single_chain, replace_chain
 from .derive import _Builder, _pose, _previous
 from .interfaces import board_view, chain_items, frame_pose, lab_pose_of_component, pose_of
 from .kernel import ChainPins, KBoard, KHolder, KMount, KPost, table_board
 from .kernel.assemble import board_pose, chain_bodies
-from .kernel.geometry import Pose, plan_bounds, q_conj, q_mul, rotate, snap_quat, snap_vec, sub
+from .kernel.geometry import Pose, overlap_depth, plan_bounds, q_conj, q_mul, rotate, snap_quat, snap_vec, sub
 from .request import chain_optic, classify
 
 #: Hardware role -> the mechanical kind its identity has.
@@ -43,6 +43,8 @@ ROLE_KIND = {ItemRoleV1.MOUNT: "MOUNT", ItemRoleV1.POST: "POST", ItemRoleV1.POST
 HARDWARE_ROLES = (ItemRoleV1.MOUNT, ItemRoleV1.POST, ItemRoleV1.POST_HOLDER)
 HARDWARE_PREFIX = {ItemRoleV1.MOUNT: ItemPrefixV1.MNT, ItemRoleV1.POST: ItemPrefixV1.PST, ItemRoleV1.POST_HOLDER: ItemPrefixV1.HLD}
 CUSTOMER_TABLE_THICKNESS_MM = 12.7
+#: Two chains' bodies closer than this penetration (mm) clear each other when a holder is re-fixed.
+CLEARANCE_TOLERANCE_MM = 1e-6
 CUSTOMER_TABLE_NAME = "Customer optical table"
 #: Rotation that takes local +Z onto the lab axis of a declared cylinder.
 _SQRT_HALF = math.sqrt(0.5)
@@ -237,6 +239,8 @@ class _Edit:
         if optic.supply_reason is not None:
             optic_item["supply_reason"] = optic.supply_reason.value
         optic_item["purchase"] = optic.purchase.model_dump(mode="json")
+        for declared in optic_item.get("placement", {}).get("ranges", ()):
+            declared["axis_lab"] = list(_unit_axis(declared["axis_lab"]))
         component = self.component(instance)
         dofs = optic_item.get("placement", {}).get("dofs")
         if dofs is not None:
@@ -277,13 +281,58 @@ class _Edit:
             if found is not None and found.resolved and (found.mount.identity, found.post.identity, found.holder.identity) == (  # type: ignore[union-attr]
                     mount.identity, post.identity, holder.identity):
                 dofs = found.dofs
-            placed = replace_chain(instance, mechanics, lab, mount, post, holder, board, hole=hole, holder_yaw=holder_yaw,
-                                   occupied_holes=occupied, dofs=dofs)
-            if placed.fixation_problem is not None and nearest:
-                placed = replace_chain(instance, mechanics, lab, mount, post, holder, board, occupied_holes=occupied, dofs=dofs)
-            return placed
+            if hole is not None:
+                placed = replace_chain(instance, mechanics, lab, mount, post, holder, board, hole=hole, holder_yaw=holder_yaw,
+                                       occupied_holes=occupied, dofs=dofs)
+                if placed.fixation_problem is None or not nearest:
+                    return placed
+            return self.refix(optic, instance, mechanics, lab, views, board, occupied, dofs)
         request = chain_optic(component, product)
         return place_single_chain(request, lab, self.context.kcatalog, board, occupied, None)
+
+    def other_bodies(self, optic_id: str) -> list[Any]:
+        """The collision bodies of every other resolved chain of the plan."""
+
+        from .interfaces import ResolvedChain
+
+        bodies: list[Any] = []
+        model = self.model
+        for other in model.items:
+            if other.role is not ItemRoleV1.OPTIC or other.item_id == optic_id or other.mounting is not MountingV1.CHAIN:
+                continue
+            chain = ResolvedChain(other, chain_items(model, other.item_id), self.context)
+            poses = chain.poses()
+            if poses is not None:
+                bodies += [b for bs in chain_bodies(chain.mount_view, chain.post_view, chain.holder_view, poses).values() for b in bs]  # type: ignore[arg-type]
+        return bodies
+
+    def refix(self, optic: Any, instance: str, mechanics: Any, lab: Pose, views: tuple[Any, Any, Any], board: KBoard,
+              occupied: set[tuple[int, int]], dofs: tuple[Any, ...]) -> ChainPlacement:
+        """The chain fixed on the nearest free hole its slot reaches whose turned fork clears every other chain (the
+        nearest free hole when none does; no hole when the slot reaches none)."""
+
+        mount, post, holder = views
+        others = self.other_bodies(optic.item_id)
+        first = replace_chain(instance, mechanics, lab, mount, post, holder, board, occupied_holes=occupied, dofs=dofs)
+        if first.hole is None or not others:
+            return first
+        axis = (first.poses.mount.position[0], first.poses.mount.position[1])  # type: ignore[union-attr]
+        candidates = []
+        for hole in board_holes(board):
+            if hole in occupied:
+                continue
+            x, y = hole_xy(board, *hole)
+            distance = math.hypot(x - axis[0], y - axis[1])
+            if holder.base.slot_start_mm - SLOT_TOLERANCE_MM <= distance <= holder.base.slot_end_mm + SLOT_TOLERANCE_MM:
+                candidates.append((distance, hole))
+        for _, hole in sorted(candidates):
+            placed = replace_chain(instance, mechanics, lab, mount, post, holder, board, hole=hole, occupied_holes=occupied, dofs=dofs)
+            if placed.fixation_problem is not None or placed.poses is None:
+                continue
+            own = [b for bs in chain_bodies(mount, post, holder, placed.poses).values() for b in bs]
+            if all(overlap_depth(a, b) <= CLEARANCE_TOLERANCE_MM for a in own for b in others):
+                return placed
+        return first
 
     def current_views(self, optic: Any) -> tuple[tuple[Any, Any, Any] | None, dict[ItemRoleV1, Any]]:
         hardware = chain_items(self.model, optic.item_id)
@@ -325,6 +374,13 @@ class _Edit:
         self.project_changed = True
         project_hash = self.project.content_hash()
         self.data["bindings"]["project"]["project_hash"]["digest"] = project_hash
+
+
+def _unit_axis(axis: Any) -> tuple[float, float, float]:
+    """``axis`` scaled to unit length (a declared range's axis; the kernel's snapped components can be off by 1e-9)."""
+
+    norm = math.sqrt(sum(float(c) * float(c) for c in axis))
+    return tuple(float(c) / norm for c in axis)  # type: ignore[return-value]
 
 
 # ------------------------------------------------------------------------------------------------ the ops

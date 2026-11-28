@@ -275,6 +275,7 @@ class OpenPlan:
 
     directory: PlanDirectory
     catalog: Any = None
+    mechanical: Any = None
 
     @property
     def path(self) -> Path:
@@ -299,7 +300,7 @@ class OpenPlan:
 
     def sources(self, revision: AssemblyPlanRevisionV1, mechanical: Any = None) -> MechanicalSources:
         binding = self.directory.mechanical_binding(revision)
-        return _require(resolve_mechanical(mechanical if mechanical else None, binding))
+        return _require(resolve_mechanical(mechanical or self.mechanical or None, binding))
 
     def context(self, revision: AssemblyPlanRevisionV1 | None = None, *, mechanical: Any = None) -> PlanContext:
         """The check / output context of ``revision`` (default the head): its Project, optical catalog, mechanical
@@ -384,7 +385,7 @@ class OpenPlan:
             self.directory.commit(revision, outcome.project, line, user_documents=user_document_bytes(edited.mechanical))
         return PlanResult(revision=revision, project=outcome.project, result=result, plan_dir=self.path, check=check)
 
-    def bind_run(self, run: Any, *, op_id: str | None = None) -> PlanResult:
+    def bind_run(self, run: Any, *, op_id: str | None = None, mechanical: Any = None) -> PlanResult:
         """A REBIND revision binding the optics run ``run`` (a run directory, record file or record) to the head."""
 
         record = read_run_record(run)
@@ -392,7 +393,7 @@ class OpenPlan:
         with self.directory.locked():
             lines = self.directory.history()
             head = self.directory.revision()
-            context = self.context(head)
+            context = self.context(head, mechanical=mechanical)
             payload = head.content()
             payload["bindings"] = {**payload["bindings"], "optics_run": run_binding(record)}
             payload.update(revision=head.revision + 1, parent_digest=head.content_digest, origin=PlanOriginV1.REBIND.value)
@@ -411,8 +412,10 @@ class OpenPlan:
         return PlanResult(revision=revision, project=context.project, result=result, plan_dir=self.path, check=check)
 
 
-def open_plan(plan_dir: str | Path, *, catalog: Any = None, verify: bool = True) -> OpenPlan:
-    """A plan directory, verified (``PLAN_DIR_INCONSISTENT`` with the problems when it is not consistent)."""
+def open_plan(plan_dir: str | Path, *, catalog: Any = None, mechanical: Any = None, verify: bool = True) -> OpenPlan:
+    """A plan directory, verified (``PLAN_DIR_INCONSISTENT`` with the problems when it is not consistent). ``catalog`` /
+    ``mechanical``: the optical catalog and mechanical documents its calls use when they name none (default: the
+    releases the plan binds, from the local store and the plan's own copies)."""
 
     directory = PlanDirectory.at(plan_dir)
     if not directory.is_plan():
@@ -420,7 +423,7 @@ def open_plan(plan_dir: str | Path, *, catalog: Any = None, verify: bool = True)
                                 {"plan_dir": str(plan_dir)}, ["history.jsonl: missing"])
     if verify:
         directory.require_consistent()
-    return OpenPlan(directory=directory, catalog=catalog)
+    return OpenPlan(directory=directory, catalog=catalog, mechanical=mechanical)
 
 
 def op_validation_error(exc: ValidationError) -> AssemblyPlanError:
