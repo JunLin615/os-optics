@@ -103,7 +103,7 @@
       "sha256": "f61627fcf29ac0b28a9db566fefc63ac20a3e0f0203be386d24fca64cc22f106"
     },
     "shared_contracts/optical_design/__init__.py": {
-      "sha256": "3655fe389a1983344ce38f2620117ab72806ba9fdcc3381100b2754b6cea794d"
+      "sha256": "d955a3350f217e15174cdd2a315d9aac529967aa6e539d7fe3b4a4626a9f4134"
     },
     "shared_contracts/optical_design/_ordering.py": {
       "sha256": "0c9e65e49056379b3fc5d74f1a18e2db987fe8a3bb3368c747730c9c120ebc8e"
@@ -115,7 +115,7 @@
       "sha256": "9a2e5a544e722097de92da8e7476ac91da786de81eda652d049a723701ed55db"
     },
     "shared_contracts/optical_design/configuration.py": {
-      "sha256": "18516053fa65aede389ee4eab84b99f654fb1fafdbc3f03662438a9e59f06de3"
+      "sha256": "99f89e26425445428dcf20eb906884fedece04423da923f0f5248ad34113b18f"
     },
     "shared_contracts/optical_design/design_content.py": {
       "sha256": "f5b9dfa6581ba0c5c51212af0034b8527e1b7c7071335398b16642a468155daf"
@@ -139,7 +139,7 @@
       "sha256": "c442e9363ef8a3af94346e57a80ceaeefc2b437720e1e5573c3c67a87f26e479"
     },
     "shared_contracts/optical_design/project.py": {
-      "sha256": "cef14660b1e6a632d37c139e1e262cc7176cabebe5e2031b82376207c0e3855e"
+      "sha256": "70ef7cc2b0d521afefbc5df89cc6cb677afc86ab037879d645fee88191f39f7f"
     },
     "shared_contracts/optical_design/pupil_field.py": {
       "sha256": "0e37714055e11fbff9c68a926a67789af0ac78765f41cc3657df2dc502ef42c2"
@@ -149,6 +149,9 @@
     },
     "shared_contracts/optical_design/source.py": {
       "sha256": "3c84676a83c067b9b5ebbe8701fad029c4d4fdfdd789a79511d213b1d22f1506"
+    },
+    "shared_contracts/optical_design/system_aperture.py": {
+      "sha256": "25634cc4efa095309ea9873f27470e072b6501feac2d2ab06e17367e266abe31"
     },
     "shared_contracts/optical_design/workspace.py": {
       "sha256": "82574cc722b59cf683108da4c40df407f1dfdfe26e1137c60cc20a68ce1dcdab"

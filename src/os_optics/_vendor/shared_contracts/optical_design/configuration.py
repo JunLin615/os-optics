@@ -50,6 +50,7 @@ from ._ordering import sort_raw
 from .compute_budget import ComputeBudgetV1
 from .numerical_settings import NumericalSettingsV1
 from .source import SourceModelV1
+from .system_aperture import SystemApertureV1
 
 
 ConfigurationId = Annotated[
@@ -96,7 +97,9 @@ class ProjectConfigurationV1(OmitAbsentFields, StrictContractModel):
     """One named state of the design (module docstring). Lists are keyed by id and kept sorted by it."""
 
     # Serialized only when given: a configuration without it keeps its earlier payload and hash.
-    _omit_when_none: ClassVar[tuple[str, ...]] = ("numerical_settings",)
+    _omit_when_none: ClassVar[tuple[str, ...]] = ("numerical_settings", "system_aperture")
+
+    system_aperture: SystemApertureV1 | None = Field(None, description="The complete system aperture of this configuration.")
 
     configuration_id: ConfigurationId
     label: str | None = Field(None, min_length=1, max_length=200, description="A short name to show for this configuration.")
