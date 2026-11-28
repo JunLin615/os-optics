@@ -38,8 +38,9 @@ from .kernel.geometry import IDENTITY, Pose, YawBox, overlap_depth, q_mul
 from .kernel.resolve import SIZE_TOL
 from .mechanical.model import OpticShapeV1
 
-#: A position (mm) and a unit-quaternion dot product this close agree (the plan's number rule rounds to 1e-6 mm).
-POSITION_TOLERANCE_MM = 2e-6
+#: A position (mm) and a unit-quaternion dot product this close agree: the plan's number rule rounds positions to 1e-6 mm
+#: and the frame's yaw to 1e-6 deg, which moves a point 300 mm from the frame origin by up to 2.6e-6 mm.
+POSITION_TOLERANCE_MM = 1e-5
 ROTATION_DOT_TOLERANCE = 1e-9
 #: A recorded insertion depth closes the optic's height when it is this close to the depth the poses give (mm).
 CLOSURE_TOLERANCE_MM = 2e-6
