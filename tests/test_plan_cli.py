@@ -114,3 +114,17 @@ def test_user_hardware_makes_the_plan_incomplete_and_preview_refused(tmp_path, p
 def test_schema_kinds(kind):
     code, doc, _ = run("schema", kind, mechanical=None)
     assert code == 0 and doc["type"] == "object"
+
+
+def test_assembly_draw_of_a_plan_package_takes_its_design_bom(tmp_path, project_file):
+    plan = tmp_path / "plan"
+    run("assembly", "plan", "derive", str(project_file), "--out", str(plan))
+    run("assembly", "plan", "draw", str(plan), "--out", str(tmp_path / "first"))
+    run("assembly", "plan", "bom", str(plan), "--design", "--out", str(tmp_path / "design.json"), mechanical=None)
+    package, detail = str(tmp_path / "first" / "preview.zip"), str(tmp_path / "first" / "assembly-detail.json")
+    code, doc, _ = run("assembly", "draw", package, "--detail", detail, "--out", str(tmp_path / "again"), mechanical=None)
+    assert code == 65 and doc["status"] == "ERROR"  # a local plan's package needs its design BOM
+    code, doc, _ = run("assembly", "draw", package, "--detail", detail, "--out", str(tmp_path / "again"),
+                       "--design-bom", str(tmp_path / "design.json"), mechanical=None)
+    assert code == 0 and doc["delivery_ready"] is True
+    assert (tmp_path / "again" / "assembly_drawing.svg").read_bytes() == (tmp_path / "first" / "assembly_drawing.svg").read_bytes()

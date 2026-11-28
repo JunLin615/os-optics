@@ -647,8 +647,19 @@ def _drawing_command(args: argparse.Namespace) -> int:
         _json_out({"drawing_dir": args.drawing_dir, "status": "VERIFIED" if not problems else "INVALID", "problems": list(problems),
                    "warnings": warnings})
         return 0 if not problems else VERIFY_FAILED
+    design_bom = None
+    if args.design_bom:
+        data = _read(args.design_bom, "design BOM")
+        if data is None:
+            return USAGE_ERROR
+        try:
+            design_bom = json.loads(data)
+        except ValueError as exc:
+            print(f"error: the design BOM is not JSON: {exc}", file=sys.stderr)
+            return USAGE_ERROR
     try:
-        drawing = generate_assembly_drawing(args.package, args.detail, locale=args.locale, diagnostic=args.diagnostic)
+        drawing = generate_assembly_drawing(args.package, args.detail, locale=args.locale, diagnostic=args.diagnostic,
+                                            design_bom=design_bom)
     except AssemblyDrawingError as exc:
         _json_out({"status": "ERROR", "error": exc.as_dict()})
         return LOCAL_INPUT_ERROR
@@ -970,6 +981,9 @@ def _main(argv: list[str] | None, prog: str, started: dict | None = None) -> int
                                  "sheet that is not for delivery (without it such a package is refused, exit 65)")
     p_asm_draw.add_argument("--locale", choices=("en", "zh-CN"), default="en",
                             help="the language of the sheet: en (default) or zh-CN (Simplified Chinese)")
+    p_asm_draw.add_argument("--design-bom", metavar="FILE",
+                            help="a local plan's package (preview 3.1): its design BOM ('assembly plan bom PLAN --design'), the "
+                                 "parts legend; 'assembly plan draw PLAN' does all of this in one step")
     p_asm_vd = asm_sub.add_parser("verify-drawing", help="re-check a drawing output directory (exit 0 = verified, 66 = invalid)")
     p_asm_vd.add_argument("drawing_dir", help="a directory written by 'assembly draw'")
     _register_command_modules(sub, assembly=asm_sub, catalog=cat_sub, project=proj_sub)

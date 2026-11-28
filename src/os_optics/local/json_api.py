@@ -433,7 +433,7 @@ LOCAL_RUN_ERROR = "LOCAL_RUN_ERROR"
 ASSEMBLY_PACKAGE_INVALID = "ASSEMBLY_PACKAGE_INVALID"
 ASSEMBLY_SCHEMA_KIND = "assembly-validation"
 DRAWING_SCHEMA_KINDS = ("assembly-detail", "assembly-drawing-result", "assembly-drawing-manifest")
-DRAWING_OPTIONS = frozenset({"diagnostic", "expected_preview_content_hash", "expected_detail_content_hash", "locale"})
+DRAWING_OPTIONS = frozenset({"diagnostic", "expected_preview_content_hash", "expected_detail_content_hash", "locale", "design_bom"})
 #: The languages a drawing (Detailed Assembly Drawing, Optical Layout Drawing) can be written in.
 DRAWING_LOCALES = ("en", "zh-CN")
 #: Project features beyond catalog products that this runtime simulates (``capabilities()["project_features"]``).
@@ -1955,8 +1955,9 @@ def generate_assembly_drawing(package: Any, detail: Any, options: Any = None) ->
 
     ``package``: the Assembly Preview Package archive bytes or ``{path: bytes}`` map; ``detail``: the Assembly Detail
     Package bytes (the bytes of an opened delivery); ``options``: ``{"diagnostic": bool, "expected_preview_content_hash":
-    str, "expected_detail_content_hash": str, "locale": "en" | "zh-CN"}`` (all optional; ``locale`` is the language of the
-    sheet, default ``en``: pass the host's UI language). A check that FAILED or was not completed is refused
+    str, "expected_detail_content_hash": str, "locale": "en" | "zh-CN", "design_bom": {...}}`` (all optional; ``locale`` is
+    the language of the sheet, default ``en``: pass the host's UI language; ``design_bom``: the design BOM a local plan's
+    package binds, its parts legend -- required for such a package). A check that FAILED or was not completed is refused
     (``DRAWING_REFUSED_VALIDATION_FAILED`` / ``DRAWING_REFUSED_VALIDATION_INCONCLUSIVE``) unless ``diagnostic`` is true.
     Returns ``drawing_status`` (``DETAILED_ASSEMBLY_DRAWING``, or with ``diagnostic`` ``DIAGNOSTIC_VALIDATION_FAILED`` /
     ``DIAGNOSTIC_VALIDATION_INCOMPLETE``), ``delivery_ready``, ``validation_status``, ``result`` (``AssemblyDrawingResultV1``), ``manifest``
@@ -1978,7 +1979,7 @@ def generate_assembly_drawing(package: Any, detail: Any, options: Any = None) ->
         drawing = generate(package, detail, diagnostic=options.get("diagnostic", False),
                            expected_preview_content_hash=options.get("expected_preview_content_hash"),
                            expected_detail_content_hash=options.get("expected_detail_content_hash"),
-                           locale=options.get("locale", "en"))
+                           locale=options.get("locale", "en"), design_bom=options.get("design_bom"))
     except AssemblyDrawingError as exc:
         return {"ok": False, "error": exc.as_dict()}
     except RecursionError:  # pragma: no cover - the generator converts every nesting failure to an AssemblyDrawingError
