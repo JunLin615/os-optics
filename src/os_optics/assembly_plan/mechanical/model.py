@@ -1,15 +1,15 @@
-"""The public mechanical catalog: ``opensci.public_mechanical_catalog`` 1.0 (an Engine-owned contract, not vendored).
+"""The public mechanical catalog: ``opensci.public_mechanical_catalog`` 1.0 (a contract the Engine itself owns).
 
 The document lists the mechanical hardware a local assembly plan may use, one entry per OpenSci identity
 (``OS-MECH-*``; a customer's own hardware document uses ``USER-MECH-*``), described only by the engineering parameters
 the assembly resolver reads, neutral visual primitives and a colour, and -- per parameter -- the kind of source the
-value rests on (``PublicBasisV1``; never the value of that source). It carries no supplier, supplier part number,
+value rests on (``PublicBasisV1``; never the value of that source). It carries no source company, source part number,
 price, cost, currency, physical shipping fact, evidence attribute name, raw evidence value or CAD asset digest.
 
 Two publishers write the format:
 
 * ``OPENSCI``: the OpenSci release (``mechanical_version`` ``m<catalog_revision>.<12 hex>``, ``OS-MECH-*`` identities,
-  at least one breadboard, the resolver policy). It is distributed as osc1 canonical bytes, and its ``sha256`` over
+  at least one breadboard, the derivation policy). It is distributed as osc1 canonical bytes, and its ``sha256`` over
   those exact bytes is the release identity every plan binds.
 * ``USER``: hardware a customer describes (``mechanical_version`` a short lower-case label, ``USER-MECH-*``
   identities, no policy: the OpenSci policy, else the ``PublicResolverPolicyV1`` defaults, applies). Any UTF-8 JSON
@@ -183,7 +183,7 @@ class MechanicalKindV1(StrEnum):
 class PublicBasisV1(StrEnum):
     """What a published parameter value rests on (never the value of that source).
 
-    ``DATASHEET`` a structured supplier datasheet fact; ``REVIEWED_REFERENCE`` a reviewed engineering reference fact;
+    ``DATASHEET`` a structured manufacturer datasheet fact; ``REVIEWED_REFERENCE`` a reviewed engineering reference fact;
     ``CAD_DERIVED`` measured from a CAD model by a recorded derivation; ``FAMILY_RULE`` an explicit reviewed family rule;
     ``PREVIEW_ASSUMPTION`` an assumed value for preview-grade realization (always disclosed, no fact)."""
 
@@ -374,8 +374,8 @@ class MountMechanismV1(StrictContractModel):
 class MountHoldsV1(StrictContractModel):
     """What a mount accepts. ROUND: ``size_mm`` is the optic diameter; RECTANGULAR: its short edge; CUBE: the cube edge.
     ``thickness_*``: the optic's axial thickness range, a None bound unlimited on that side; both None on a ROUND or
-    RECTANGULAR mount means the range is not recorded (the resolver then rejects the mount). ``clear_aperture_mm``
-    None: unknown (the resolver assumes ``policy.fallback_clear_aperture_ratio`` of the size and discloses it);
+    RECTANGULAR mount means the range is not recorded (plan derivation then rejects the mount). ``clear_aperture_mm``
+    None: unknown (plan derivation assumes ``policy.fallback_clear_aperture_ratio`` of the size and discloses it);
     ``retainer_depth_mm`` / ``rear_depth_mm`` None: taken from the envelope."""
 
     shape: OpticShapeV1
@@ -608,7 +608,7 @@ class PublicMechanicalCatalogV1(StrictContractModel):
             raise ValueError(f"a {self.publisher} document lists identities matching {sku_pattern} only: {foreign[:3]}")
         if opensci:
             if self.policy is None:
-                raise ValueError("an OPENSCI document carries the resolver policy")
+                raise ValueError("an OPENSCI document carries the derivation policy")
             if not any(i.kind == MechanicalKindV1.BREADBOARD for i in self.identities):
                 raise ValueError("an OPENSCI document lists at least one BREADBOARD")
         elif self.policy is not None:
