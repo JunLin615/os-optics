@@ -336,6 +336,7 @@ from .example import (
 )
 from .network import export_linear_optical_network, export_request_network
 from .paraxial import ParaxialError, paraxial_analysis
+from .system_aperture import SystemApertureV1, system_aperture_analysis, trace_system_pupil
 from .cavity import CavityError, cavity_analysis
 from .freshness import RunNotReadable, run_freshness
 from .project_ops import PROJECT_OPS, ProjectOpError, ProjectUpdate, ProjectUpdateError, apply_project_ops, update_project
@@ -427,6 +428,9 @@ __all__ = [
     "SimulatedPartV1",
     "SurfaceEnvelope",
     "SurfaceSequenceModelV1",
+    "SystemApertureV1",
+    "system_aperture_analysis",
+    "trace_system_pupil",
     "TargetV1",
     "catalog_resolution_status",
     "check_local_validation_binding",

@@ -48,7 +48,7 @@ from ..gaussian import initial_state
 from ..materials.library import MaterialLibrary
 from ..surfaces import Hits
 from .decisions import counts_on_active_area
-from .emitter_samples import global_samples
+from .emitter_samples import EmitterSamples, global_samples
 from .hits import SurfaceHit
 from .path_ids import root_path_id
 from .scheduler import TraceScheduler
@@ -91,7 +91,8 @@ class SampledRows:
     direction_u: list[float] = field(default_factory=list)
     direction_v: list[float] = field(default_factory=list)
     direction_n: list[float] = field(default_factory=list)
-    power_W: list[float] = field(default_factory=list)
+    # Geometric pupil analyses also retain a crossing with unknown power (None).
+    power_W: list[float | None] = field(default_factory=list)
     counted: list[bool] = field(default_factory=list)
 
 
@@ -179,6 +180,7 @@ class SampleTracer(Tracer):
         self._line: SampledLine | None = None
         self._sample_index = 0
         self._keep = False
+        self._geometric_pupil = False
         self._seen: dict[tuple[str, str | None], int] = {}
         self._meeting: tuple[str, float] | None = None  # the surface being met and the index of the medium the light arrives from
         self._entered: dict[str, str | None] = {}  # path id -> the surface its current run through a medium began on
@@ -186,11 +188,20 @@ class SampleTracer(Tracer):
         self._unit_offsets[(0, 0)] = np.zeros((0, 2))  # (a ray has no pupil rings)
 
     # ------------------------------------------------------------------------------------------------- the run
-    def run_samples(self) -> SampledTrace:
+    def run_samples(self, *, pupil_samples: EmitterSamples | None = None) -> SampledTrace:
+        """Trace normal emitter samples or the supplied geometric pupil rays of a single analysis emitter.
+
+        A system pupil supplies each launch point, direction and polarization, and retains every requested path.
+        """
+        self._geometric_pupil = pupil_samples is not None
+        if self._geometric_pupil and len(self.scene.emitters) != 1:
+            raise ValueError("explicit pupil samples belong to one emitter")
         cfg = self.cfg
         for emitter in self.scene.emitters:
             coherent = emitter.pattern is not None and emitter.pattern.coherent
-            samples = None if coherent else global_samples(emitter)
+            samples = pupil_samples
+            if samples is None and not coherent:
+                samples = global_samples(emitter)
             for j, (wavelength_nm, weight) in enumerate(emitter.spectrum):
                 power = emitter.power_W * weight
                 self.out.inputs.append(SourceInput(emitter.source_id, emitter.owner_id, j, wavelength_nm, power))
@@ -207,6 +218,7 @@ class SampleTracer(Tracer):
                 gstate, n = state
                 if coherent:  # (one line: its rays follow the field's wavevector in this medium)
                     samples = global_samples(emitter, n)
+                if coherent or pupil_samples is not None:
                     bases = field_bases(samples.directions, emitter.e1, emitter.e2)
                 else:
                     bases = transverse_basis(samples.directions, cfg.zero_vector_tol)
@@ -218,7 +230,7 @@ class SampleTracer(Tracer):
                         break
                     line.launched = k + 1
                     self._sample_index = k
-                    self._keep = k < DISPLAY_SAMPLES
+                    self._keep = pupil_samples is not None or k < DISPLAY_SAMPLES
                     self.recorder = self._display_recorder if self._keep else None
                     pk = self._packet(emitter, j, k, wavelength_nm, line.weight_W, gstate, n, samples, bases)
                     if self.recorder is not None:
@@ -255,7 +267,7 @@ class SampleTracer(Tracer):
             jones = np.array([[0.0 + 0.0j, 1.0 + 0.0j]]) if samples.second_state[k] else np.array([[1.0 + 0.0j, 0.0 + 0.0j]])
         opl = np.zeros(1) if samples.opl is None else samples.opl[k:k + 1].copy()
         return _Packet(
-            path_id=f"{root_path_id(emitter.source_id, j)}.{k}", src=emitter, spectral_index=j,  # type: ignore[arg-type]
+            path_id=f"{root_path_id(emitter.source_id, j, emitter.polarization_component)}.{k}", src=emitter, spectral_index=j,  # type: ignore[arg-type]
             wavelength_nm=wavelength_nm, power0_W=weight_W, medium=emitter.medium, n=n, o=samples.points[k:k + 1].copy(), d=d.copy(),
             e1=e1, e2=e2, jones=jones, alive=np.ones(1, dtype=bool), opl=opl, length=np.zeros(1), gstate=gstate, lineage=[],
         )
@@ -376,7 +388,7 @@ class SampleTracer(Tracer):
         self.sampled.hit_W[key] = self.sampled.hit_W.get(key, 0.0) + p_in
 
     def _do_observe(self, pk: _Packet, surf: SurfaceG, h: Hits, inter) -> str | None:
-        if pk.power_bound_W is not None:
+        if pk.power_bound_W is not None and not self._geometric_pupil:
             return None
         cos_i = abs(float(dot(pk.d[0], surf.normal)))
         if inter.observation_medium is not None and inter.observation_medium != pk.medium:
@@ -398,7 +410,7 @@ class SampleTracer(Tracer):
         rows.direction_u.append(float(dot(d, surf.u_axis)))
         rows.direction_v.append(float(dot(d, surf.v_axis)))
         rows.direction_n.append(float(dot(d, surf.normal)))
-        rows.power_W.append(pk.chief_power())
+        rows.power_W.append(pk.chief_power() if pk.power_bound_W is None else None)
         rows.counted.append(on_area and accepted is not False)
         pk.lineage.append(f"{surf.surface_id}:observe")
         self._end_event(pk, "observed")
