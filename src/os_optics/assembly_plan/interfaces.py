@@ -34,7 +34,7 @@ from .findings import make_finding
 from .kernel import KBoard, KHolder, KMount, KPost, table_board
 from .chain import slot_offset
 from .kernel.assemble import ChainPoses, chain_bodies
-from .kernel.geometry import IDENTITY, Pose, YawBox, overlap_depth, q_mul, rotate
+from .kernel.geometry import IDENTITY, Pose, YawBox, overlap_depth, q_mul
 from .kernel.resolve import SIZE_TOL
 from .mechanical.model import OpticShapeV1
 

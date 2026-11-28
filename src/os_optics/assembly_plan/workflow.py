@@ -258,7 +258,7 @@ def derive_plan(project: Any, *, out_dir: str | Path | None = None, run: Any = N
         request = osc1_digest({"project_hash": document.content_hash(), "options": derive_options.model_dump(mode="json"),
                                "mechanical": [r.model_dump(mode="json") for r in sources.binding()]})
         call_id = op_id or _generated_op_id(lines, request, None if not rederive else parent)
-        kind = PlanOriginV1.REDERIVE if rederive else PlanOriginV1.DERIVE
+        kind = revision.origin
         result = _call_result(target, revision, op_id=call_id, base=base if rederive else None, ops=[], project_changed=False,
                               run_freshness=check.freshness)
         line = _line(lines, kind, call_id, request, base if rederive else None, revision, result)

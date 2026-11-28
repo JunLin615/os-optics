@@ -585,3 +585,25 @@ def test_plan_errors_carry_code_details_and_problems():
     assert error.as_dict() == {"code": "BASE_CHANGED", "message": "the plan moved", "details": {"head": "e" * 64},
                                "problems": ["one"]}
     assert str(error) == "the plan moved"
+
+
+def test_the_plan_binding_and_the_mechanical_document_ref_state_the_same_versions():
+    """``MechanicalBindingV1`` (the plan) and ``MechanicalDocumentRefV1`` (the mechanical sources) bind one document the
+    same way: the same fields and version grammars, so a source's ref is a valid plan binding."""
+
+    from os_optics.assembly_plan.mechanical.model import OPENSCI_VERSION_PATTERN, USER_VERSION_PATTERN, MechanicalDocumentRefV1
+
+    assert c._OPENSCI_MECHANICAL_VERSION.pattern == OPENSCI_VERSION_PATTERN
+    assert c._USER_MECHANICAL_VERSION.pattern == USER_VERSION_PATTERN
+    assert set(c.MechanicalBindingV1.model_fields) == set(MechanicalDocumentRefV1.model_fields)
+    ref = MechanicalDocumentRefV1(publisher="OPENSCI", mechanical_version="m1.0123456789ab", sha256="a" * 64)
+    assert c.MechanicalBindingV1.model_validate(ref.model_dump(mode="json")).sha256 == "a" * 64
+
+
+def test_layout_not_evaluated_is_an_unknown_plan_layout_finding():
+    finding = f.make_finding(c.PlanFindingCodeV1.LAYOUT_NOT_EVALUATED, ("pst-1",), check=c.FindingCheckV1.PLAN_LAYOUT,
+                             source=c.FindingSourceV1.CHECK, details={"reason": "USER_HARDWARE_NOT_PROJECTABLE"})
+    assert finding.severity is c.FindingSeverityV1.UNKNOWN and f.finding_problems(finding) == []
+    with pytest.raises(ValueError):
+        f.make_finding(c.PlanFindingCodeV1.LAYOUT_NOT_EVALUATED, ("pst-1", "hld-1"), check=c.FindingCheckV1.PLAN_LAYOUT,
+                       source=c.FindingSourceV1.CHECK)
