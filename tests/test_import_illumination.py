@@ -9,7 +9,7 @@ from os_optics._vendor.shared_contracts.optical_design import OpticalComponentIn
 from os_optics.local import run_optical_project
 from os_optics.prescription import PrescriptionImportError, import_prescription, read_prescription_project
 from os_optics.prescription.errors import SourceLocation
-from os_optics.prescription.illumination import sources
+from os_optics.prescription.illumination import illumination
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +29,7 @@ G,CONSTANT_INDEX,1.5,450,700
 
 
 def probes(lens, **changes):
-    result = sources(replace(lens, prescription=replace(lens.prescription, **changes)))
+    result, _ = illumination(replace(lens, prescription=replace(lens.prescription, **changes)))
     return [OpticalComponentInstanceV1.model_validate(c) for c in result]
 
 

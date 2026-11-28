@@ -11,9 +11,10 @@ from pydantic import ValidationError
 from .._vendor.shared_contracts.design_catalog import PublicOpticalCatalogV2
 from .._vendor.shared_contracts.optical_design import ProjectDocumentV2
 from . import PrescriptionImport, _contract_text, _import_models
+from .aperture import validate_aperture
 from .errors import PrescriptionErrorCode as E, PrescriptionImportError, SourceLocation, refuse
 from .glass import CatalogSource, _Catalog
-from .illumination import sources
+from .illumination import illumination
 from .zmx import read_zmx
 from .zmx_config import configuration_states
 
@@ -81,11 +82,15 @@ def _standalone(imported: PrescriptionImport) -> ProjectDocumentV2:
         if rx.image_semi_diameter_mm:
             image["aperture"] = {"shape": "circle", "radius_mm": float(rx.image_semi_diameter_mm)}
         observations.append(image)
-    return ProjectDocumentV2.model_validate({
+    probes, aperture = illumination(imported)
+    project = ProjectDocumentV2.model_validate({
         "schema": "opensci.project", "project_schema_version": "2.0", "design_intent": "OPTICAL_SYSTEM",
-        "components": [*sources(imported), *components], "optical_models": models, "model_materials": imported.model_materials or None,
+        "components": [*probes, *components], "optical_models": models, "model_materials": imported.model_materials or None,
         "model_coatings": imported.model_coatings or None, "environment": imported.environment, "observations": observations,
+        "system_aperture": aperture,
     })
+    validate_aperture(project, imported)
+    return project
 
 
 def _configuration(base: ProjectDocumentV2, state: ProjectDocumentV2, imported: PrescriptionImport, number: int) -> dict:
@@ -129,7 +134,8 @@ def _configuration(base: ProjectDocumentV2, state: ProjectDocumentV2, imported: 
     elif rx.object_na is not None:
         label += f", object NA {rx.object_na:g}"
     return {"configuration_id": f"config-{number}", "label": label,
-            "component_poses": component_poses, "source_models": source_models, "observation_poses": observation_poses}
+            "component_poses": component_poses, "source_models": source_models, "observation_poses": observation_poses,
+            **({"system_aperture": state.system_aperture} if state.system_aperture != base.system_aperture else {})}
 
 
 def read_prescription_project(path: str | Path, *, catalog: PublicOpticalCatalogV2 | CatalogSource | None = None) -> ProjectDocumentV2:
@@ -155,11 +161,14 @@ def read_prescription_project(path: str | Path, *, catalog: PublicOpticalCatalog
     # All configurations of this file resolve against the same lazily loaded release and name index.
     materials = _Catalog(catalog, "catalog")
     text = _text(path)
-    active, texts = configuration_states(text) if extension == ".zmx" else (1, [text])
+    aperture_locations: dict[int, SourceLocation] = {}
+    active, texts = configuration_states(text, aperture_locations=aperture_locations) if extension == ".zmx" else (1, [text])
     states = []
     for number, state_text in enumerate(texts, 1):
         try:
             rx = reader(state_text)
+            if number in aperture_locations:
+                rx = replace(rx, aperture_location=aperture_locations[number])
             imported = _import_models(rx, catalog=materials)
             states.append((_standalone(imported), imported))
         except PrescriptionImportError as exc:

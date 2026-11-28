@@ -171,8 +171,8 @@ def configuration_texts(text: str) -> list[str]:
     return configuration_states(text)[1]
 
 
-def configuration_states(text: str) -> tuple[int, list[str]]:
-    """Return the saved active configuration number (one-based) and the expanded texts."""
+def configuration_states(text: str, *, aperture_locations: dict[int, SourceLocation] | None = None) -> tuple[int, list[str]]:
+    """Expand the saved states, optionally recording the original APER cell for each state."""
     lines = text.splitlines()
     records: dict[tuple[int | None, str], list[int]] = defaultdict(list)
     surfaces: list[int] = []
@@ -259,6 +259,8 @@ def configuration_states(text: str) -> tuple[int, list[str]]:
             raw = state[line]
             words = raw.split()
             words[slot] = group[config].value
+            if group[config].operand == "APER" and aperture_locations is not None:
+                aperture_locations[config] = group[config].location
             if group[config].operand == "SDIA" and len(words) > 2:
                 words[2] = '1'  # The operand explicitly sets the clear semi-diameter in this state.
             state[line] = raw[:len(raw) - len(raw.lstrip())] + ' '.join(words)

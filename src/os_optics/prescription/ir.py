@@ -364,6 +364,7 @@ class Prescription:
     fields: tuple[tuple[Decimal, Decimal], ...] = ()
     field_type: str = "angle"  # field angles in degrees, or object heights in mm for "height"
     field_weights: tuple[Decimal, ...] = ()  # per-field merit weights in source order
+    aperture_location: SourceLocation | None = None  # location of the declared system aperture, including float by stop
 
 
 __all__ = [

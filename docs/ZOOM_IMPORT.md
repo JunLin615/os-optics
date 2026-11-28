@@ -18,7 +18,7 @@ Run this Python example from the repository root. The first import resolves ever
 import json
 from pathlib import Path
 
-from os_optics.local import load_project, load_public_catalog
+from os_optics.local import load_project, load_public_catalog, trace_system_pupil
 from os_optics.prescription import read_prescription_project
 
 fixture = Path('tests/fixtures/zmx/zoom')
@@ -26,8 +26,14 @@ catalog = load_public_catalog(fixture / 'catalog.json')
 project = read_prescription_project(fixture / 'US20130335830_Example01P.zmx', catalog=catalog)
 output = Path('zoom.project.json')
 output.write_text(json.dumps(project.payload(), indent=2), encoding='utf-8')
-telephoto = load_project(output).configured('config-3')
+saved = load_project(output)
+telephoto = saved.configured('config-3')
+rim = trace_system_pupil(saved, source_id='SRC1', configuration_id='config-3',
+                         pupil_coordinates=[(0, 1)], wavelength_nm=587.721865)
+print(rim['entrance_pupil_radius_mm'], rim['rays'][0]['observations'][0]['direction_v'])
 ```
+
+At the positive vertical edge of the axial pupil, the d-line ray in position 3 enters at height 2.845 mm, crosses the physical stop at 2.89924841 mm and reaches the prescribed image at −0.00196154 mm with signed direction sine −0.05339201. Replacing the single position-3 `APER` value with 3.00 mm gives entrance height 1.500 mm, stop height 1.51586062 mm, image height −0.00095821 mm and direction sine −0.02813558. Positions 1 and 2 retain marginal heights of 3.36111501 and 3.13674656 mm at the stop. Raising position 3 to 9.4 mm sends the axial marginal ray outside the clear aperture of surface 13. Import reports that surface and the source row of the position-3 `APER` operand. [Saved-project aperture comparisons](../tests/test_prescription_system_aperture.py)
 
 ## Dispersion and wavelength conventions
 

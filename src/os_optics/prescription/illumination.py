@@ -59,8 +59,8 @@ def _spectrum(imported: PrescriptionImport) -> tuple[float, dict, str]:
 
 
 def _curvature(s: IrSurface, axis: str) -> float:
-    if s.is_mirror or s.linear_sag or s.sag and s.sag.kind not in {"BICONIC", "TOROIDAL", "XY_POLYNOMIAL"}:
-        raise refuse(E.UNSUPPORTED_FEATURE, "cannot determine the entrance pupil through this surface for an off-axis probe", s.location)
+    if s.linear_sag or s.sag and s.sag.kind not in {"BICONIC", "TOROIDAL", "XY_POLYNOMIAL"}:
+        raise refuse(E.UNSUPPORTED_FEATURE, "cannot determine the entrance pupil through this surface profile", s.location)
     radius = s.radius_mm
     if s.cylinder_axis == axis:
         return 0.0
@@ -118,9 +118,15 @@ def _stop_transfer(imported: PrescriptionImport, stop_index: int, primary: float
         a, b = 1.0, 0.0
         for i in reversed(range(stop_index)):
             s = before_stop[i]
-            b = (b + a * float(s.thickness_mm)) / indices[i + 1]
-            a -= b * (indices[i + 1] - indices[i]) * _curvature(s, axis)
-            b *= indices[i]
+            b += a * float(s.thickness_mm)
+            if s.is_mirror:
+                # With u = dy/dz in the fixed frame, reflection gives u_out = -u_in - 2*c*y.
+                a -= 2 * b * _curvature(s, axis)
+                b = -b
+            elif indices[i] != indices[i + 1]:
+                b /= indices[i + 1]
+                a -= b * (indices[i + 1] - indices[i]) * _curvature(s, axis)
+                b *= indices[i]
         result.append((a, b))
     return result
 
@@ -135,8 +141,46 @@ def _slope(angle: Decimal, location: SourceLocation) -> float:
     return (-s if angle < 0 else s) / c
 
 
-def sources(imported: PrescriptionImport) -> list[dict]:
-    """One beam per field, in the first-vertex frame (+Z incident), with the full positive-weight spectrum."""
+def _system_aperture(imported: PrescriptionImport, stop: IrSurface, transfer: list[tuple[float, float]],
+                     primary: float, finite: bool) -> dict | None:
+    rx = imported.prescription
+    location = rx.aperture_location or stop.location
+    if rx.entrance_pupil_diameter_mm is not None:
+        definition = {"kind": "ENTRANCE_PUPIL_DIAMETER", "value": float(rx.entrance_pupil_diameter_mm)}
+    elif rx.image_f_number is not None:
+        definition = {"kind": "IMAGE_F_NUMBER", "value": float(rx.image_f_number)}
+    elif rx.object_na is not None:
+        if not finite:
+            raise refuse(E.UNSUPPORTED_FEATURE, "Object-space NA requires a finite object. Supply an entrance pupil diameter "
+                         "for a collimated object.", location)
+        definition = {"kind": "OBJECT_NA", "value": float(rx.object_na)}
+    elif stop.is_stop:
+        definition = {"kind": "FLOAT_BY_STOP"}
+    elif rx.aperture_location is not None:
+        raise refuse(E.FIELD_MISSING, "Float by stop requires a marked stop surface. Mark its physical aperture "
+                     "or supply an entrance pupil diameter.", location)
+    else:
+        return None
+
+    (ax, bx), (ay, by) = transfer
+    if not ax or not ay:
+        raise refuse(E.UNSUPPORTED_FEATURE, "The entrance pupil lies at infinity. Export a finite entrance pupil "
+                     "or explicitly sampled rays.", location)
+    pupil_z = bx / ax
+    if not math.isfinite(pupil_z) or not math.isclose(pupil_z, by / ay):
+        raise refuse(E.UNSUPPORTED_FEATURE, "The two sections have different or nonfinite entrance pupil positions. "
+                     "A circular pupil requires one finite plane.", location)
+    if definition["kind"] == "FLOAT_BY_STOP":
+        if not math.isclose(abs(ax), abs(ay)):
+            raise refuse(E.UNSUPPORTED_FEATURE, "The entrance optics image the stop as an ellipse. "
+                         "The Project sampler requires a circular pupil.", location)
+        definition["entrance_pupil_radius_mm"] = float(stop.clear_semi_diameter_mm) / abs(ax)
+    return {**definition, "entrance_pupil_z_mm": pupil_z, "object_conjugate": "FINITE" if finite else "INFINITE",
+            "primary_wavelength_nm": primary}
+
+
+def illumination(imported: PrescriptionImport) -> tuple[list[dict], dict | None]:
+    """One alignment probe per field and its shared primary-wavelength entrance pupil in the first-vertex frame."""
     rx = imported.prescription
     primary, emission, spectrum_note = _spectrum(imported)
     fields = rx.fields or ((Decimal(0), Decimal(0)),)
@@ -153,7 +197,8 @@ def sources(imported: PrescriptionImport) -> list[dict]:
     clear = float(stop.clear_semi_diameter_mm)
     hole = float(stop.hole_radius_mm or 0)
     target = ((clear + hole) / 2 if hole else 0.0, 0.0)
-    transfer = _stop_transfer(imported, stop_index, primary) if stop_index and (off_axis or hole) else [(1.0, 0.0)] * 2
+    transfer = _stop_transfer(imported, stop_index, primary)
+    system_aperture = _system_aperture(imported, stop, transfer, primary, finite)
     front = float(imported.optical_models[0].model.envelope.z_min_mm)
     if finite:
         z = -float(rx.object.distance_mm)
@@ -238,4 +283,4 @@ def sources(imported: PrescriptionImport) -> list[dict]:
                            "nominal_pose": {"position_mm": [*positions, z], "quaternion_wxyz": list(q)},
                            "source_model": {"model_kind": "GAUSSIAN_BEAM", **emission, "waist_radius_mm": waist,
                                             "waist_position_mm": 0.0, "m2": 1.0, "polarization": {"kind": "LINEAR", "angle_deg": 0.0}}})
-    return components
+    return components, system_aperture

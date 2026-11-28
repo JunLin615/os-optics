@@ -336,8 +336,11 @@ def read_zmx(text: str, *, default_unit: str = "mm", requested_unit: str | None 
         if surf.thickness_mm is None:
             raise refuse(E.THICKNESS_INVALID, "an interior surface cannot be followed by infinite spacing", block["DISZ"].where)
     object_distance = _distance(obj.require("DISZ"), unit)
-    if sum(k in header for k in ("ENPD", "OBNA", "FNUM", "FLOA")) > 1:
-        raise refuse(E.ROW_INVALID, "the source declares conflicting system aperture definitions")
+    apertures = [header[k] for k in ("ENPD", "OBNA", "FNUM", "FLOA") if k in header]
+    if len(apertures) > 1:
+        raise refuse(E.ROW_INVALID, "the source declares conflicting system aperture definitions", apertures[-1].where)
+    if "FLOA" in header and any(header["FLOA"].number(i) for i in range(len(header["FLOA"].args))):
+        raise header["FLOA"].unsupported("includes additional stop settings. Export a fixed entrance pupil diameter.")
     return Prescription(
         FORMAT_ID, hashlib.sha256(text.encode("utf-8")).hexdigest(), unit, surfaces,
         name=" ".join(header["NAME"].args).strip('"') or None if "NAME" in header else None,
@@ -348,7 +351,7 @@ def read_zmx(text: str, *, default_unit: str = "mm", requested_unit: str | None 
         object_na=header["OBNA"].positive() if "OBNA" in header else None,
         entrance_pupil_diameter_mm=to_mm(header["ENPD"].positive(), unit) if "ENPD" in header else None,
         image_f_number=header["FNUM"].positive() if "FNUM" in header else None,
-        image_semi_diameter_mm=_image_radius(image, unit),
+        image_semi_diameter_mm=_image_radius(image, unit), aperture_location=apertures[0].where if apertures else None,
         fields=fields, field_type=field_type, field_location=ftyp.where if ftyp else None, wavelength_location=wave_location,
         field_weights=tuple(header["FWGN"].number(i) for i in range(len(fields))) if "FWGN" in header else (),
     )
