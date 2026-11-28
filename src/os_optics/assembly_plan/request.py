@@ -230,6 +230,19 @@ def optic_request(component: Any, classified: ClassifiedComponent, product: Any,
                         pins=pins)
 
 
+def chain_optic(component: Any, product: Any, pins: ChainPins | None = None) -> OpticRequest:
+    """The kernel's request of one Project component holding a catalog ``product``, for a single-chain search
+    (``chain.place_single_chain``): its mechanics (``optics.mechanics_of``; ``ValueError`` when the kernel cannot hold the
+    product), its published ports and its retained DOFs."""
+
+    mechanics = mechanics_of(product)
+    if not isinstance(mechanics, OpticMechanicsV1):
+        raise ValueError(f"the kernel holds no mechanics of {product.optical_sku} ({mechanics.reason})")
+    pose = component.nominal_pose
+    return OpticRequest(component.instance_id, product.optical_sku, component.optical_role.value, tuple(pose.position_mm),  # type: ignore[arg-type]
+                        tuple(pose.quaternion_wxyz), _dofs(component), mechanics, ports=public_ports(product), pins=pins)  # type: ignore[arg-type]
+
+
 def external_request(component: Any, classified: ClassifiedComponent) -> ExternalRequest:
     """The kernel's external design anchor of one anchored component (a light source starts the beam)."""
 
@@ -267,5 +280,5 @@ def kernel_request(project: Any, catalog: Any, classified: tuple[ClassifiedCompo
                                        max_board_size_mm=max_board_size_mm, beam_height_mm=beam_height_mm)
 
 
-__all__ = ["CATALOG_DESIGN_GEOMETRY", "ClassifiedComponent", "aperture_corners", "classify", "engineering_facts", "envelope_of",
+__all__ = ["CATALOG_DESIGN_GEOMETRY", "ClassifiedComponent", "aperture_corners", "chain_optic", "classify", "engineering_facts", "envelope_of",
            "external_request", "kernel_request", "observations", "optic_request", "outer_size_mm", "public_ports"]

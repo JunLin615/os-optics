@@ -9,7 +9,7 @@ import pytest
 from derive_helpers import optical_catalog, project
 
 from os_optics.assembly_plan.contract import MountingV1, SupplyReasonV1, SupplyV1
-from os_optics.assembly_plan.request import CATALOG_DESIGN_GEOMETRY, classify, kernel_request
+from os_optics.assembly_plan.request import CATALOG_DESIGN_GEOMETRY, chain_optic, classify, kernel_request
 
 
 def _by(classified):
@@ -69,3 +69,14 @@ def test_an_unknown_product_is_refused():
     p = project("focus")
     with pytest.raises(KeyError):
         classify(p, SimpleNamespace(get=lambda sku: None))
+
+
+def test_chain_optic_is_the_kernel_request_of_one_component():
+    catalog = optical_catalog()
+    p = project("focus")
+    lens = next(c for c in p.components if c.instance_id == "L1")
+    request = chain_optic(lens, catalog.get(lens.product.optical_sku))
+    assert (request.instance_id, request.optical_sku, request.mechanics.category) == ("L1", "OS-OPT-TEST-LENS-PCX-F100", "LENS")
+    assert [d.axis for d in request.retained_dofs] == ["Tx", "Ty", "Tz"]
+    with pytest.raises(ValueError):
+        chain_optic(lens, SimpleNamespace(optical_sku="OS-OPT-TEST-PRISM", form="RIGHT_ANGLE_PRISM", design_geometry=None))
