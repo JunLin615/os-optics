@@ -679,6 +679,10 @@ def _drawing_command(args: argparse.Namespace) -> int:
 
 
 def _design_schema(which: str) -> dict:
+    from .assembly_plan.schemas import PLAN_SCHEMA_KINDS, plan_schema
+
+    if which in PLAN_SCHEMA_KINDS:
+        return plan_schema(which)
     from .assembly import AssemblyLocalValidationV1
     from .local import LocalValidationRecordV1, OpticalSimulationSceneV1, ProjectDocumentV2, PublicOpticalCatalogV2
 
@@ -706,7 +710,7 @@ def _register_command_modules(sub: argparse._SubParsersAction, *, assembly: argp
 
     from . import (cli_catalog, cli_commerce, cli_doctor, cli_evaluate, cli_interop, cli_layout, cli_native, cli_network, cli_paraxial,
                    cli_prescription, cli_results, cli_solids, cli_view)
-    from . import cli_project, cli_workspace
+    from . import cli_assembly_plan, cli_project, cli_workspace
 
     cli_doctor.register(sub)  # doctor
     cli_project.register(sub)  # capabilities
@@ -722,6 +726,7 @@ def _register_command_modules(sub: argparse._SubParsersAction, *, assembly: argp
     cli_evaluate.register_project(project)  # project evaluate
     cli_commerce.register_view(cli_view.register(sub))  # view RUN_DIR | view --resolution ID
     cli_commerce.register(sub, assembly=assembly)  # account, resolve, resolution, order, artifacts, feedback, assembly preview|drawing
+    cli_assembly_plan.register(assembly)  # assembly plan derive|show|check|edit|history|preview|draw|bom|run-optics
     cli_native.register(sub)  # native list|describe|build
     cli_interop.register(sub)  # interop list|show
     cli_workspace.register(sub)  # workspace init|import|select|transform|group|replace|batch|export|status|run|record|history
@@ -807,7 +812,9 @@ def _main(argv: list[str] | None, prog: str, started: dict | None = None) -> int
                                              "(focal-field-request / imaging-request / ghost-request / field-request) or an analysis-result, or Engine request / result")
     p_schema.add_argument("which", choices=["project", "local-validation", "catalog", "optical-scene", "assembly-validation",
                                             "linear-optical-network", "pupil-field-request", "detector-model", "focal-field-request",
-                                            "imaging-request", "ghost-request", "field-request", "analysis-result", "request", "result"])
+                                            "imaging-request", "ghost-request", "field-request", "analysis-result", "assembly-plan",
+                                            "assembly-plan-ops", "design-bom", "purchase-bom", "bom-review", "public-mechanical-catalog",
+                                            "request", "result"])
     p_cmp = sub.add_parser("compare", help="compare two Engine result JSON files within the cross-runtime tolerances")
     p_cmp.add_argument("left")
     p_cmp.add_argument("right")

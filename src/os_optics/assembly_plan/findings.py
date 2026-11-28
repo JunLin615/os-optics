@@ -148,6 +148,9 @@ _PLAN_RULES: dict[PlanFindingCodeV1, FindingRule] = {
     _F.CATALOG_BINDING_CHANGED: _rule(
         _S.WARNING, (0,), None, (_C.PLAN_INTERFACES,),
         "A catalog bound to this plan is not the one supplied now; rebind the catalogs to check against it.", ("catalog",)),
+    _F.LAYOUT_NOT_EVALUATED: _rule(
+        _S.UNKNOWN, (0, 1), None, (_C.PLAN_LAYOUT,),
+        "The layout and collision check did not evaluate this item: it is not part of the preview package (details.reason)."),
 }
 
 _ISSUE_SEVERITY: dict[LocalValidationStatusV1, FindingSeverityV1] = {

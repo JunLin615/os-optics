@@ -66,7 +66,9 @@ def test_capabilities_describe_this_runtime_and_summarize_the_catalog():
     assert caps["dof_axes"] == ["Tx", "Ty", "Tz", "Rx", "Ry", "Rz"] and caps["dof_control_intents"] == ["MANUAL", "NUMERICAL"]
     assert set(caps["schema_kinds"]) == {"project", "local-validation", "catalog", "optical-scene", "view-settings", "optical-workspace", "assembly-validation",
                                          "assembly-detail", "assembly-drawing-result", "assembly-drawing-manifest", "linear-optical-network", "pupil-field-request", "detector-model",
-                                         "focal-field-request", "analysis-result", "imaging-request", "ghost-request", "field-request"}
+                                         "focal-field-request", "analysis-result", "imaging-request", "ghost-request", "field-request",
+                                         "assembly-plan", "assembly-plan-ops", "design-bom", "purchase-bom", "bom-review",
+                                         "public-mechanical-catalog"}
 
 
 def test_catalog_products_filter_like_the_catalog_select_and_page():

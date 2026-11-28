@@ -10,6 +10,7 @@ Plan directory (``PLAN_DIR``; written by ``directory.py``, read by every ``assem
     revisions/r0001.json ...      immutable revision documents, canonical osc1 bytes, 1-based and contiguous
     projects/<project_hash>.json  every Project a revision binds (content-addressed by its osc1 project hash)
     mechanical/<sha256>.json      USER mechanical documents a revision binds (copied when bound)
+    runs/<record_hash>.json       the Local Validation record of every optics run a revision binds
     history.jsonl                 append-only journal (``HistoryLineV1`` per line); its last line names the head
     plan.lock                     exclusive-create lock file held for every write (pathlib only, no ``os``)
 
@@ -95,6 +96,8 @@ PLAN_FILE = "plan.json"
 REVISIONS_DIR = "revisions"
 PROJECTS_DIR = "projects"
 MECHANICAL_DIR = "mechanical"
+#: The Local Validation records of the runs a revision binds (``runs/<record hash>.json``), so freshness is recomputed offline.
+RUNS_DIR = "runs"
 HISTORY_FILE = "history.jsonl"
 LOCK_FILE = "plan.lock"
 #: ``revisions/r<NNNN>.json``: at least this many digits, zero-padded.
@@ -457,6 +460,7 @@ class PlanFindingCodeV1(StrEnum):
     OPENSCI_SUPPLIED_UNMOUNTED = "OPENSCI_SUPPLIED_UNMOUNTED"
     UNRESOLVED_SUPPLY = "UNRESOLVED_SUPPLY"
     CATALOG_BINDING_CHANGED = "CATALOG_BINDING_CHANGED"
+    LAYOUT_NOT_EVALUATED = "LAYOUT_NOT_EVALUATED"
 
 
 FindingCode = PlanFindingCodeV1 | AssemblyIssueCodeV1
