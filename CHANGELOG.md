@@ -3,7 +3,7 @@
 Earlier releases are summarized in `src/os_optics/_version.py` and on
 [PyPI](https://pypi.org/project/os-optics/#history).
 
-## Unreleased (0.15.0.dev0)
+## Unreleased (0.15.0, not published)
 
 ### Added
 
