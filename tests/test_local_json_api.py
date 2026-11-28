@@ -43,7 +43,7 @@ def test_capabilities_describe_this_runtime_and_summarize_the_catalog():
     caps = json_api.capabilities()
     _json_safe(caps)
     catalog = load_public_catalog()
-    assert caps["ok"] is True and caps["json_api"] == "opensci.local_json_api" and caps["json_api_version"] == "1.8"
+    assert caps["ok"] is True and caps["json_api"] == "opensci.local_json_api" and caps["json_api_version"] == "1.9"
     assert caps["engine_build_id"] == engine_build_id() and caps["runtime_kind"] == "PYTHON_LOCAL"
     assert caps["catalog_version"] == catalog.catalog_version
     # no per-SKU list, whatever the catalog size; the size bound grows only with the Engine's vocabulary (35 kB since the

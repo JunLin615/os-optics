@@ -214,7 +214,18 @@
 # tables, spectral bulk loss and Schott dn/dT; and a native Project operates in its stated environment (air at a
 # temperature and pressure, default 20 C and 101325 Pa; VACUUM gaps), so a native Project's Engine input states its air and
 # every native Engine input hash moves (Engine schema 1.12.0, materials model 1.1).
-__version__ = "0.14.0"
+# 0.15.0 (in development; 0.15.0.dev0 until it is published) adds local assembly plans (`os_optics.assembly_plan`, `os-optics
+# assembly plan derive|show|check|edit|history|preview|draw|bom|run-optics`, schema `os-optics.assembly_plan` 1.0): the
+# public mechanical catalog (`opensci.public_mechanical_catalog` 1.0, `catalog sync` / `catalog mechanical`, `--mechanical
+# FILE` / OS_OPTICS_MECHANICAL_CATALOG for the user's own USER-MECH hardware), a plan derived on this device by the
+# assembly kernel (mount, post, holder and board hole per optic; findings instead of refusals), revisioned edits with a
+# journal, plan-level interface checks, the LOCAL_PLAN Assembly Preview Package (manifest 3.1), Assembly Detail 3.2 and the
+# Detailed drawing 4.2 of the user's design, the local viewer of a plan, the design BOM and the purchase BOM; and the
+# commerce client of BOM-only ordering: `order quote` with the line review and its confirmation, the Account handoff
+# without a token, the retired design-ordering routes answered with the local command, and no drawing upload. json_api 1.9
+# (the assembly plan methods and `mechanical_catalog`); the Engine schema (1.12.0) and every Project and Engine input hash
+# are unchanged.
+__version__ = "0.15.0.dev0"
 ENGINE_VERSION = __version__
 
 # The PyPI distribution this package is published as (``importlib.metadata.distribution(DISTRIBUTION_NAME)``; the import

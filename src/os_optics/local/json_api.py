@@ -420,7 +420,7 @@ from .submission import (
 )
 
 JSON_API = "opensci.local_json_api"
-JSON_API_VERSION = "1.8"
+JSON_API_VERSION = "1.9"
 #: Every method of this API (``os_optics.local.api_registry``): the functions below register themselves with
 #: ``@api_method``, the composition functions are added after them. A host calls them through ``call_method``.
 API_METHODS = ApiRegistry()
