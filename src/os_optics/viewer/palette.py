@@ -84,6 +84,16 @@ BEAM_STYLES = {
                   "en": "Beam axis behind a central obstruction (no light)", "zh": "中心遮挡后的光束轴（无光）"},
 }
 
+# An assembly coloured by its checks (a local assembly plan, or a package with its layout check): a part whose worst
+# check status is not PASS takes the status colour instead of its class colour; a part of the finding being looked at
+# (``--finding``) is highlighted.
+CHECK_STATUS_RGB = {
+    "WARNING": (0.96, 0.66, 0.12),  # amber
+    "FAIL": (0.86, 0.16, 0.16),  # red (a FAIL check or an ERROR finding)
+    "UNKNOWN": (0.55, 0.56, 0.6),  # grey (UNKNOWN / OUT_OF_MODEL_SCOPE check, UNKNOWN finding: not evaluated)
+}
+HIGHLIGHT_RGB = (0.98, 0.2, 0.62)
+
 BACKGROUND_RGB = (0.965, 0.972, 0.98)
 EDGE_DARKEN = 0.38  # outline colour = class colour x this
 GLASS_EDGE_RGB = (0.16, 0.36, 0.56)
