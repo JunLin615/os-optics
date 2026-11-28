@@ -89,8 +89,12 @@ class PlanDirectory:
     def is_plan(self) -> bool:
         return (self.path / HISTORY_FILE).is_file()
 
-    def is_empty(self) -> bool:
-        return not self.path.exists() or (self.path.is_dir() and not any(self.path.iterdir()))
+    def is_empty(self, *, held: bool = False) -> bool:
+        """No entry in the directory (or no directory); ``held``: under ``locked``, the lock file itself not counted."""
+
+        if not self.path.exists():
+            return True
+        return self.path.is_dir() and not any(not (held and p.name == LOCK_FILE) for p in self.path.iterdir())
 
     def history(self, op_id: str | None = None, limit: int | None = None) -> list[HistoryLineV1]:
         """The journal lines (oldest first), optionally of one ``op_id`` and the last ``limit`` of them."""

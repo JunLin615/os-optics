@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import derive_helpers as h
 import pytest
 from plan_helpers import MECHANICAL, USER_MECHANICAL, catalog, derive
 
@@ -53,6 +54,53 @@ def test_rederive_from_a_plan_keeps_ids_and_writes_the_next_revision(tmp_path):
     assert {i.item_id for i in revision.items} == {i.item_id for i in plan.revision(1).items}
     assert revision.item("pst-1").purchase.spare_units == 2  # the purchase choice is kept
     assert ap.open_plan(tmp_path / "plan").verify() == []
+
+
+def _write_meanwhile(monkeypatch, write):
+    """Run ``write`` (another command) once while ``derive_plan`` computes, i.e. between its first look and its lock."""
+
+    import os_optics.assembly_plan.derive as derive_module
+
+    real = derive_module.derive_plan_content
+    pending = [write]
+
+    def racing(*args, **kwargs):
+        outcome = real(*args, **kwargs)
+        if pending:
+            pending.pop()()
+        return outcome
+
+    monkeypatch.setattr(derive_module, "derive_plan_content", racing)
+
+
+def test_a_rederive_refuses_when_the_plan_moved_while_it_was_computed(tmp_path, monkeypatch):
+    plan = derive(tmp_path)
+    root = tmp_path / "plan"
+    _write_meanwhile(monkeypatch, lambda: ap.open_plan(root, catalog=catalog(), mechanical=MECHANICAL).edit(
+        [{"op": "pin", "item_id": "mnt-1", "pinned": True}], op_id="concurrent-edit"))
+    with pytest.raises(ap.AssemblyPlanError) as caught:
+        ap.derive_plan(plan.project(), from_plan=root, mechanical=MECHANICAL, catalog=catalog())
+    reopened = ap.open_plan(root, catalog=catalog(), mechanical=MECHANICAL)
+    assert caught.value.code is AssemblyPlanErrorCode.BASE_CHANGED
+    assert caught.value.details["head"] == reopened.head.content_digest and caught.value.details["revision"] == 2
+    assert reopened.verify() == [] and not (root / "plan.lock").exists()
+    assert [(line.seq, line.op_id, line.kind.value) for line in reopened.history()][1:] == [(2, "concurrent-edit", "EDIT")]
+    assert reopened.head.origin.value == "EDIT"  # the edit written meanwhile is kept
+
+
+def test_a_derive_refuses_a_plan_written_into_its_directory_while_it_was_computed(tmp_path, monkeypatch):
+    cat = catalog()
+    project = h.project("focus", cat)
+    root = tmp_path / "plan"
+    written = []
+    _write_meanwhile(monkeypatch, lambda: written.append(ap.derive_plan(project, out_dir=root, mechanical=MECHANICAL,
+                                                                         catalog=cat, plan_id="ap-first-plan")))
+    with pytest.raises(ap.AssemblyPlanError) as caught:
+        ap.derive_plan(project, out_dir=root, mechanical=MECHANICAL, catalog=cat, plan_id="ap-second-plan")
+    assert caught.value.code is AssemblyPlanErrorCode.PLAN_DIR_NOT_EMPTY
+    reopened = ap.open_plan(root, catalog=cat, mechanical=MECHANICAL)
+    assert reopened.verify() == [] and len(reopened.history()) == 1 and not (root / "plan.lock").exists()
+    assert reopened.head.plan_id == "ap-first-plan" and reopened.head.content_digest == written[0].revision.content_digest
 
 
 @pytest.mark.parametrize("damage", ["revision", "plan_json", "project", "history"])

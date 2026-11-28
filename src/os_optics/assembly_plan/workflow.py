@@ -254,7 +254,18 @@ def derive_plan(project: Any, *, out_dir: str | Path | None = None, run: Any = N
         return PlanResult(revision=revision, project=document, result=result, plan_dir=None, check=check)
     directory = PlanDirectory.at(target)
     with directory.locked():
-        lines = directory.history() if directory.is_plan() else []
+        # (the derivation ran outside the lock: a write that landed meanwhile is refused here, never overwritten)
+        if rederive:
+            head = directory.revision()
+            if head.content_digest != parent:
+                raise AssemblyPlanError(AssemblyPlanErrorCode.BASE_CHANGED, "the plan changed while it was derived again; "
+                                        "nothing was written: run the derive again", {"head": head.content_digest,
+                                                                                      "expected_base": parent,
+                                                                                      "revision": head.revision})
+        elif not directory.is_empty(held=True):
+            raise AssemblyPlanError(AssemblyPlanErrorCode.PLAN_DIR_NOT_EMPTY, f"{target} is not empty: another command wrote "
+                                    "into it while the plan was derived; give a new directory", {"plan_dir": str(target)})
+        lines = directory.history() if rederive else []
         request = osc1_digest({"project_hash": document.content_hash(), "options": derive_options.model_dump(mode="json"),
                                "mechanical": [r.model_dump(mode="json") for r in sources.binding()]})
         call_id = op_id or _generated_op_id(lines, request, None if not rederive else parent)
