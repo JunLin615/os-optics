@@ -17,7 +17,9 @@ Without a token, ``resolve_token`` raises ``TOKEN_MISSING`` whose ``details.hand
 (``account_handoff``): the OpenSci Account registration and sign-in pages, which return to the token page
 (``<account>/register?next=%2Ftokens``, ``<account>/login?next=%2Ftokens``; ``<account>`` is ``OPENSCI_ACCOUNT_URL``, a base
 URL that may carry a path, else the packaged default), the token file to save the new token to, and the command to run
-again (``resume_command``, filled in by the command that needed the token). ``handoff_text`` is the same as text.
+again (filled in by the command that needed the token with ``resume_with``: ``resume_argv``, the argument list,
+``resume_shell``, the shell it is quoted for -- ``posix`` or ``powershell`` (``shell_words``) -- and ``resume_command``,
+the list quoted for that shell). ``handoff_text`` is the same as text.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from typing import Any
 
 from ..deployment import default_account_origin
 from .errors import TOKEN_FILE_UNREADABLE, TOKEN_MALFORMED, TOKEN_MISSING, OpenSciConfigurationError, Recovery
+from . import shell_words
 
 ENV_TOKEN = "OPENSCI_TOKEN"
 ENV_TOKEN_FILE = "OPENSCI_TOKEN_FILE"
@@ -116,12 +119,23 @@ def account_base_url(environ: Mapping[str, str] | None = None) -> str:
 
 def account_handoff(environ: Mapping[str, str] | None = None, *, home: Path | None = None,
                     resume_command: str | None = None) -> dict[str, Any]:
-    """How a person without a token gets one and continues: ``{register_url, login_url, token_file, resume_command}``
-    (see the module docstring)."""
+    """How a person without a token gets one and continues: ``{register_url, login_url, token_file, resume_command,
+    resume_argv, resume_shell}`` (see the module docstring; the last three are None until ``resume_with``)."""
 
     base = account_base_url(environ)
     return {"register_url": f"{base}/register?next={TOKENS_RETURN_PATH}", "login_url": f"{base}/login?next={TOKENS_RETURN_PATH}",
-            "token_file": str(default_token_file(home)), "resume_command": resume_command}
+            "token_file": str(default_token_file(home)), "resume_command": resume_command, "resume_argv": None,
+            "resume_shell": None}
+
+
+def resume_with(handoff: dict[str, Any], argv: list[str], shell: str | None = None) -> dict[str, Any]:
+    """``handoff`` with the command to resume with: ``resume_argv`` (``argv``), ``resume_shell`` (``shell``, default the
+    shell of this device) and ``resume_command`` (``argv`` quoted for it)."""
+
+    shell = shell or shell_words.device_shell()
+    handoff.update(resume_argv=[str(argument) for argument in argv], resume_shell=shell,
+                   resume_command=shell_words.command_line(argv, shell))
+    return handoff
 
 
 def handoff_text(handoff: Mapping[str, Any], *, kept: str | None = None, repeat_note: str | None = None) -> str:
@@ -269,6 +283,7 @@ __all__ = [
     "account_handoff",
     "default_token_file",
     "handoff_text",
+    "resume_with",
     "read_token_file",
     "remove_token_file",
     "resolve_token",

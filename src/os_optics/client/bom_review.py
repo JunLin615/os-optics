@@ -25,6 +25,19 @@ service's own rule: every decision names a changed line, every changed line has 
 alone does not resolve a line that cannot be supplied, every line states its id, and the decisions turn the reviewed
 lines into exactly the submitted lines (``CONFIRMATION_INCONSISTENT``; nothing is sent).
 
+A review file also names the purchase request it belongs to, so a confirmation is only ever sent for its own BOM:
+
+* ``bom_request_sha256``: the SHA-256 of the BOM's normal form (``bom_request_digest``: its lines with their ids --
+  ``L1..Ln`` when no line states one -- part numbers, quantities and purposes, ``PLAN`` by default; never the
+  ``confirmed_changes`` or the editable ``proposed_confirmation``);
+* ``round``: 1 for the review of a BOM quote, ``n + 1`` for the review written in answer to the confirmation of a
+  round-``n`` review (when supply changed again). A later round copies ``bom_request_sha256`` of the file it confirmed,
+  so it still names the original BOM.
+
+``check_review_binding(BOM, REVIEW)`` refuses a review file of another BOM (``CONFIRMATION_BOM_MISMATCH``) and one
+without these fields (``CONFIRMATION_NOT_POSSIBLE``: quote the BOM again). ``review_out_problem`` refuses a review
+output path that is one of the command's input files (``REVIEW_OUT_COLLISION``), whatever its spelling.
+
 Version ``1`` (``--schema-version 1``, for a service before BOM-only ordering) is the earlier part-list body: line ids
 are filled in (``L1..Ln``) when no line states one, ``mechanical_supply`` is ``NONE``, and a line with a ``purpose``
 cannot be sent (spare units are then added to the quantities by the BOM writer).
@@ -32,9 +45,13 @@ cannot be sent (spare units are then added to the quantities by the BOM writer).
 
 from __future__ import annotations
 
+import hashlib
+import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
+from ..local.submission import canonical_json_bytes
 from .errors import LocalInputError, Recovery
 
 PART_LIST_SCHEMA = "opensci.commercial.part_list_submission"
@@ -58,6 +75,16 @@ DECISIONS = ("REMOVED", "QUANTITY_CHANGED", "SUBSTITUTED")
 BOM_INVALID = "PART_LIST_INVALID"
 CONFIRMATION_INCONSISTENT = "CONFIRMATION_INCONSISTENT"
 CONFIRMATION_NOT_POSSIBLE = "CONFIRMATION_NOT_POSSIBLE"
+CONFIRMATION_BOM_MISMATCH = "CONFIRMATION_BOM_MISMATCH"
+REVIEW_OUT_COLLISION = "REVIEW_OUT_COLLISION"
+#: ``CONFIRMATION_BOM_MISMATCH`` of a round-1 review whose ``submitted`` BOM is not the BOM it names.
+REVIEW_INCONSISTENT = "REVIEW_INCONSISTENT"
+#: The ``reason`` of a ``REVIEW_OUT_COLLISION``.
+SAME_AS_BOM = "SAME_AS_BOM"
+SAME_AS_REVIEW = "SAME_AS_REVIEW"
+IS_DIRECTORY = "IS_DIRECTORY"
+FIRST_ROUND = 1
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
 def _invalid(message: str, **details: Any) -> LocalInputError:
@@ -135,6 +162,28 @@ def purchase_bom_body(document: Mapping[str, Any], *, schema_version: str = "2")
     return {"schema": PART_LIST_SCHEMA, "schema_version": "1", "lines": numbered, "mechanical_supply": MECHANICAL_SUPPLY_NONE}
 
 
+def bom_normal_form(document: Mapping[str, Any]) -> dict[str, Any]:
+    """The purchase request a BOM document states, as the service normalizes it (version 2): every line with its id
+    (``L1..Ln`` when no line states one), part number, quantity and purpose (``PLAN`` by default). ``confirmed_changes``
+    and ``mechanical_supply`` are not part of it. Raises ``LocalInputError`` ``PART_LIST_INVALID`` for lines that cannot
+    be sent."""
+
+    if not isinstance(document, Mapping):
+        raise _invalid("a purchase BOM is a JSON object", fields=[])
+    lines = _lines(document)
+    return {"schema": PART_LIST_SCHEMA, "schema_version": "2",
+            "lines": [{"line_id": line.get("line_id", f"{LINE_ID_PREFIX}{index + 1}"), "opensci_sku": line["opensci_sku"],
+                       "quantity": line["quantity"], "purpose": line.get("purpose", DEFAULT_PURPOSE)}
+                      for index, line in enumerate(lines)]}
+
+
+def bom_request_digest(document: Mapping[str, Any]) -> str:
+    """The lowercase hex SHA-256 of ``canonical_json_bytes(bom_normal_form(document))``: the purchase request a review
+    file belongs to (``bom_request_sha256``)."""
+
+    return hashlib.sha256(canonical_json_bytes(bom_normal_form(document))).hexdigest()
+
+
 def review_of(response: Mapping[str, Any]) -> dict[str, Any] | None:
     """The line review of a quote answer (``resolution.bom_review``), or None (an earlier service answers without)."""
 
@@ -153,11 +202,20 @@ def _line_key(line: Mapping[str, Any]) -> tuple[Any, Any, Any, Any]:
     return line.get("line_id"), line.get("opensci_sku"), line.get("quantity"), line.get("purpose", DEFAULT_PURPOSE)
 
 
-def review_document(submitted: Mapping[str, Any], review: Mapping[str, Any], resolution_id: str | None) -> dict[str, Any]:
+def review_document(submitted: Mapping[str, Any], review: Mapping[str, Any], resolution_id: str | None, *,
+                    bom_request_sha256: str | None = None, round_number: int = FIRST_ROUND) -> dict[str, Any]:
     """The review file (module docstring): with ``resolution_id`` (a persisted CHANGES_REQUIRED quote) a proposed
-    confirmation that keeps every OK line and removes every changed one; without it (no line could be supplied) none."""
+    confirmation that keeps every OK line and removes every changed one; without it (no line could be supplied) none.
+    ``submitted`` is the body that was sent; ``bom_request_sha256`` the request the review belongs to (default: the
+    digest of ``submitted``, which is right for round 1 only); ``round_number`` its ``round``."""
 
+    if not isinstance(round_number, int) or isinstance(round_number, bool) or round_number < FIRST_ROUND:
+        raise ValueError("round_number is a whole number of at least 1")
+    if round_number > FIRST_ROUND and bom_request_sha256 is None:
+        raise ValueError("a later round names the BOM of the first round (bom_request_sha256)")
+    digest = bom_request_sha256 if bom_request_sha256 is not None else bom_request_digest(submitted)
     document: dict[str, Any] = {"schema": REVIEW_SCHEMA, "schema_version": REVIEW_SCHEMA_VERSION, "resolution_id": resolution_id,
+                                "bom_request_sha256": digest, "round": round_number,
                                 "submitted": dict(submitted), "bom_review": dict(review)}
     if resolution_id is not None:
         lines = [{"line_id": line["line_id"], "opensci_sku": line["opensci_sku"], "quantity": line["quantity"],
@@ -226,6 +284,75 @@ def confirmation_problems(review: Mapping[str, Any], body: Mapping[str, Any]) ->
     return sorted(problems, key=lambda p: (str(p.get("line_id") or ""), p["reason"]))
 
 
+def _not_possible(message: str, **details: Any) -> LocalInputError:
+    return LocalInputError(CONFIRMATION_NOT_POSSIBLE, message, details=details, recovery=Recovery.FIX_REQUEST)
+
+
+def review_round(review_file: Mapping[str, Any]) -> int:
+    """The ``round`` of a review file that ``check_review_binding`` accepted."""
+
+    return int(review_file["round"])
+
+
+def check_review_binding(bom_document: Mapping[str, Any], review_file: Any) -> None:
+    """Refuse a review file that does not belong to the purchase request of ``bom_document`` (nothing is sent):
+    ``CONFIRMATION_NOT_POSSIBLE`` for a file that is not a review file, one without ``bom_request_sha256`` / ``round``
+    (written by an earlier os-optics) or without a stored quote (``resolution_id`` null); ``CONFIRMATION_BOM_MISMATCH``
+    for a review of another BOM (``details.bom_request_sha256`` of this BOM, ``details.review_bom_request_sha256``), or
+    a round-1 review whose ``submitted`` BOM is not the one it names (``details.reason`` ``REVIEW_INCONSISTENT``). The
+    BOM itself is checked before (``purchase_bom_body``); the confirmation's own check is ``confirmation_body``."""
+
+    if not isinstance(review_file, Mapping) or review_file.get("schema") != REVIEW_SCHEMA:
+        raise _not_possible(f"the file is not a review file ({REVIEW_SCHEMA}) written by 'os-optics order quote'")
+    recorded, round_number = review_file.get("bom_request_sha256"), review_file.get("round")
+    if not isinstance(recorded, str) or not _SHA256_HEX.fullmatch(recorded) or not isinstance(round_number, int) \
+            or isinstance(round_number, bool) or round_number < FIRST_ROUND:
+        raise _not_possible("this review file does not name the BOM it belongs to (it was written by an earlier "
+                            "os-optics, or edited): quote the BOM again (os-optics order quote BOM.json) and confirm the "
+                            "new review", fields=["bom_request_sha256", "round"])
+    if not review_file.get("resolution_id"):
+        raise _not_possible("this review has no quote to confirm: no line of the BOM could be supplied, so nothing was "
+                            "stored; change the BOM and quote it again", resolution_id=review_file.get("resolution_id"))
+    digest = bom_request_digest(bom_document)
+    if digest != recorded:
+        raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file belongs to another BOM than the one named; "
+                              "nothing was sent", details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded},
+                              recovery=Recovery.FIX_REQUEST)
+    if round_number == FIRST_ROUND:
+        submitted = review_file.get("submitted")
+        try:
+            consistent = isinstance(submitted, Mapping) and bom_request_digest(submitted) == recorded
+        except LocalInputError:
+            consistent = False
+        if not consistent:
+            raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file's submitted BOM is not the BOM it names "
+                                  "(the file was edited); nothing was sent",
+                                  details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded,
+                                           "reason": REVIEW_INCONSISTENT},
+                                  recovery=Recovery.FIX_REQUEST)
+
+
+def review_out_problem(out: str | Path, inputs: Mapping[str, str | Path]) -> dict[str, Any] | None:
+    """Why the review file cannot be written to ``out``, or None: ``out`` is an existing directory (``IS_DIRECTORY``)
+    or the same file as one of ``inputs`` (``{reason: path}``, e.g. ``{SAME_AS_BOM: BOM.json}``), whatever the
+    spelling (relative or absolute, ``./`` and ``..``, the case of a case-insensitive file system, a symbolic or hard
+    link: ``Path.samefile`` compares the files themselves). A path that does not exist yet is no input."""
+
+    target = Path(out)
+    if target.is_dir():
+        return {"review_out": str(out), "reason": IS_DIRECTORY}
+    if not target.exists():
+        return None
+    for reason, path in inputs.items():
+        try:
+            same = target.samefile(path)
+        except OSError:
+            same = False
+        if same:
+            return {"review_out": str(out), "reason": reason, "input": str(path)}
+    return None
+
+
 def confirmation_body(review_file: Mapping[str, Any]) -> dict[str, Any]:
     """The body ``--confirm REVIEW.json`` sends: the review file's ``proposed_confirmation`` (as edited), checked
     against its review first (module docstring). Raises ``LocalInputError`` ``CONFIRMATION_NOT_POSSIBLE`` (a review
@@ -258,14 +385,21 @@ def confirmation_body(review_file: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "CHANGES_REQUIRED",
+    "CONFIRMATION_BOM_MISMATCH",
     "CONFIRMATION_INCONSISTENT",
     "CONFIRMATION_NOT_POSSIBLE",
     "ORDERABLE",
+    "REVIEW_OUT_COLLISION",
     "REVIEW_SCHEMA",
+    "bom_normal_form",
+    "bom_request_digest",
     "changed_lines",
+    "check_review_binding",
     "confirmation_body",
     "confirmation_problems",
     "purchase_bom_body",
     "review_document",
     "review_of",
+    "review_out_problem",
+    "review_round",
 ]

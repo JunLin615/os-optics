@@ -2029,6 +2029,28 @@ supplied as listed (`CHANGES_REQUIRED`: a line `NOT_ORDERABLE`, `TEMPORARILY_UNA
 sent), 67 when the service refuses it (`BOM_NOT_ORDERABLE` when no line can be supplied: the review is written) and 77
 without a token (the other codes: `order quote --help`). `--schema-version 1` sends the earlier part-list body to a
 service that does not quote BOMs yet (no `purpose`, no confirmation); `resolve-parts PARTS.json` also sends that body.
+
+`--confirm REVIEW.json` is bound to its BOM. The review file records the purchase request it belongs to
+(`bom_request_sha256`, the SHA-256 of the BOM's normal form, and `round`), and every check runs before the token is
+looked up or anything is sent:
+
+- a missing or unreadable BOM or review file: `INPUT_FILE_UNREADABLE` (`details.argument`, `details.reason`), exit 64;
+- a review of another BOM: `CONFIRMATION_BOM_MISMATCH`, exit 65; a review file without the binding (written before it
+  existed): `CONFIRMATION_NOT_POSSIBLE`, exit 65 -- quote the BOM again;
+- the proposed confirmation is checked by the service's rule (`CONFIRMATION_INCONSISTENT`, exit 65). Editing its
+  decisions and lines is how a person changes a quantity or substitutes a part number;
+- a `--review-out` that is the BOM or the `--confirm` file, under any spelling (relative or absolute, `./`, `..`, case,
+  a symbolic or hard link), or a directory: `REVIEW_OUT_COLLISION`, exit 64.
+
+When supply changes again, the confirmation is answered with a new review, `bom.review-2.json` (round 2, the same
+`bom_request_sha256`); confirm it with the same BOM (`order quote bom.json --confirm bom.review-2.json`). Running the
+same confirmation again sends the same body with the same key, so it replays the same quote.
+
+Without a token, `details.handoff` carries the command to resume with: `resume_argv` (the argument list: the BOM, the
+`--confirm` and `--review-out` files as absolute paths, `--schema-version`, `--api-url` and `--json` when given),
+`resume_shell` (`posix` or `powershell`) and `resume_command`, the list quoted for that shell -- PowerShell on Windows,
+sh elsewhere; `cmd.exe` is not supported. After sign-in it sends the same body with the same idempotency key. The
+`next_command` of a review is quoted the same way (`next_argv`, `next_shell`).
 From Python: `client.quote_bom(document)` (`os_optics.client.purchase_bom_body`, `review_of`, `review_document`,
 `confirmation_body`).
 

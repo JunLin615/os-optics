@@ -27,7 +27,7 @@ OpenSci 检查每一行能否供应，但不检查零件能否装配在一起：
 os-optics account status
 ```
 
-没有 Account 时也可以先做方案、写好清单。本机没有令牌时，`os-optics order quote` 不发送任何内容，清单保留在文件中。它会给出 Account 的注册和登录页面，并说明令牌的保存位置；之后再次运行同一命令即可。`OPENSCI_ACCOUNT_URL` 可指定其他 Account 网站。同一清单再次发送时请求相同，因此重复运行不会产生第二个报价。
+没有 Account 时也可以先做方案、写好清单。本机没有令牌时，`os-optics order quote` 不发送任何内容，清单保留在文件中。它会给出 Account 的注册和登录页面，并说明令牌的保存位置；之后运行它给出的命令即可：清单、审核文件和输出文件均为绝对路径，`--schema-version` 相同，并按你的 shell 加好引号（Windows 上为 PowerShell，其他系统为 sh），因此发送的是同一请求。`OPENSCI_ACCOUNT_URL` 可指定其他 Account 网站。同一清单再次发送时请求相同，因此重复运行不会产生第二个报价。
 
 ## 获取配置方案
 
@@ -59,6 +59,9 @@ os-optics order quote bom.json
 
 - **每一行都可以供应**（`ORDERABLE`，退出码 0）。输出给出价格和下一条命令 `os-optics order create RESOLUTION_ID`。
 - **部分行无法按清单供应**（`CHANGES_REQUIRED`，退出码 1）。某一行可能不是可订购的 OpenSci 产品、暂时无法供应，或数量超过单行上限。输出列出这些行，并写出 `bom.review.json`。该文件建议保留其他行、删除有变化的行。你可以修改其中的决定，例如为超过上限的行减少数量，或换成其他料号。然后用 `os-optics order quote bom.json --confirm bom.review.json` 发送。确认之前，该报价不能下单。
+  - 审核文件记录了它所属的清单。`--confirm` 需要同一份清单：其他清单的审核文件，或不存在的清单文件，都会在发送任何内容之前被拒绝（`CONFIRMATION_BOM_MISMATCH`、`INPUT_FILE_UNREADABLE`）。
+  - 如果确认之前供应又发生变化，回复是新的审核文件 `bom.review-2.json`。用同一份清单以同样方式确认：`os-optics order quote bom.json --confirm bom.review-2.json`。
+  - 审核文件绝不会覆盖清单或被确认的文件（`REVIEW_OUT_COLLISION`；不发送任何内容）。
 - **没有任何一行可以供应**（`BOM_NOT_ORDERABLE`，退出码 67）。审核文件已写出，服务不保存任何内容；修改清单后再报价。
 
 `--schema-version 1` 向尚不支持清单报价的服务发送旧的零件清单格式。该格式没有 `purpose`，也没有确认步骤。

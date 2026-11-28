@@ -27,7 +27,7 @@ Start at the [OpenSci website](https://opensci-optics.com/). Your Account gives 
 os-optics account status
 ```
 
-You can plan and write the BOM before you have an Account. If no token is on this device, `os-optics order quote` sends nothing and keeps your BOM in its file. It prints the registration and sign-in pages of your Account and says where to save the token. Then you run the same command again. `OPENSCI_ACCOUNT_URL` selects another Account website. Sending the same BOM again gives the same request, so a repeated command never creates a second quote.
+You can plan and write the BOM before you have an Account. If no token is on this device, `os-optics order quote` sends nothing and keeps your BOM in its file. It prints the registration and sign-in pages of your Account and says where to save the token. Then you run the command it prints: the same BOM, review and output files as absolute paths and the same `--schema-version`, quoted for your shell (PowerShell on Windows, sh elsewhere), so it sends the same request. `OPENSCI_ACCOUNT_URL` selects another Account website. Sending the same BOM again gives the same request, so a repeated command never creates a second quote.
 
 ## Get a configuration
 
@@ -59,6 +59,9 @@ The quote reviews every line. The result is one of these:
 
 - **Every line can be supplied** (`ORDERABLE`, exit 0). The output prints the prices and the next command, `os-optics order create RESOLUTION_ID`.
 - **Some lines cannot be supplied as listed** (`CHANGES_REQUIRED`, exit 1). A line may not be an orderable OpenSci product, may be temporarily unavailable, or may ask for more units than one line allows. The output lists those lines and writes `bom.review.json`. That file proposes to keep the other lines and to remove the changed ones. You can edit its decisions: for example, a smaller quantity for a line above the limit, or another part number. Then send it with `os-optics order quote bom.json --confirm bom.review.json`. The quote cannot be ordered until its changes are confirmed.
+  - The review file records the BOM it was written for. `--confirm` needs that same BOM: a review of another BOM, or a BOM file that does not exist, is refused before anything is sent (`CONFIRMATION_BOM_MISMATCH`, `INPUT_FILE_UNREADABLE`).
+  - If supply changes again before you confirm, the answer is a new review, `bom.review-2.json`. Confirm it the same way, with the same BOM: `os-optics order quote bom.json --confirm bom.review-2.json`.
+  - The review file is never written over the BOM or the file you confirm (`REVIEW_OUT_COLLISION`; nothing is sent).
 - **No line can be supplied** (`BOM_NOT_ORDERABLE`, exit 67). The review file is written, nothing is stored, and you change the BOM before quoting again.
 
 `--schema-version 1` sends the earlier part-list form to a service that does not quote BOMs yet. That form has no `purpose` and no confirmation.

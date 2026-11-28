@@ -78,6 +78,11 @@ class BomReviewV1(StrictContractModel):
     schema_id: Literal["os-optics.bom_review"] = Field("os-optics.bom_review", alias="schema")
     schema_version: Literal["1.0"] = "1.0"
     resolution_id: str | None = None
+    bom_request_sha256: Sha256Digest = Field(description="The purchase request (BOM) this review belongs to: the SHA-256 "
+                                             "of the BOM's normal form (os_optics.client.bom_review.bom_request_digest); "
+                                             "a later round copies it from the review it confirmed.")
+    round: StrictInt = Field(ge=1, description="1 for the review of a BOM quote; n + 1 for the review answering the "
+                                               "confirmation of a round-n review.")
     submitted: dict[str, Any] = Field(description="The body as sent.")
     bom_review: dict[str, Any] = Field(description="The service's line review, verbatim.")
     proposed_confirmation: dict[str, Any] | None = Field(default=None, description="A purchase BOM with confirmed_changes.")

@@ -44,9 +44,15 @@ Earlier releases are summarized in `src/os_optics/_version.py` and on
     unselected items are excluded and reported). `--schema-version 1` writes the earlier body.
 - **Purchase BOM quotes** (`os-optics order quote BOM.json [--confirm REVIEW.json]`, `client.quote_bom`). The service's
   line review (`ORDERABLE` / `CHANGES_REQUIRED`) gets a review file with a proposed confirmation, which is checked
-  locally before it is sent.
+  locally before it is sent. The review file names the BOM it belongs to (`bom_request_sha256`, `round`):
+  `--confirm` with another BOM, a missing BOM or an unbound review is refused before anything is sent
+  (`CONFIRMATION_BOM_MISMATCH`, `INPUT_FILE_UNREADABLE`, `CONFIRMATION_NOT_POSSIBLE`). A confirmation answered with
+  new changes writes the next round (`BOM.review-2.json`), confirmed the same way. `--review-out` never replaces an
+  input file (`REVIEW_OUT_COLLISION`, checked before sending).
 - **Account handoff without a token:** the registration and sign-in URLs (`OPENSCI_ACCOUNT_URL`), the token location
-  and the resume command. The same BOM gives the same idempotency key.
+  and the resume command (`resume_argv`, and `resume_command` quoted for PowerShell on Windows or sh elsewhere). It
+  keeps every option that changes the request (`--schema-version`, `--confirm`, `--review-out`, `--api-url`, `--json`)
+  with absolute paths. The same BOM gives the same idempotency key.
 - **JSON API 1.9:**
   - new methods `derive_assembly_plan`, `check_assembly_plan`, `apply_assembly_plan_ops`, `assembly_plan_preview`,
     `assembly_plan_drawing`, `assembly_plan_bom` and `mechanical_catalog`;
