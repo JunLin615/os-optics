@@ -15,10 +15,11 @@ from .aperture import validate_aperture
 from .errors import PrescriptionErrorCode as E, PrescriptionImportError, SourceLocation, refuse
 from .glass import CatalogSource, _Catalog
 from .illumination import illumination
+from .len_reader import read_len
 from .zmx import read_zmx
 from .zmx_config import configuration_states
 
-_READERS = {".zmx": read_zmx}
+_READERS = {".zmx": read_zmx, ".len": read_len}
 
 
 def _text(path: Path) -> str:

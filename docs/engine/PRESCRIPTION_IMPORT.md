@@ -36,6 +36,10 @@ RayOptics 0.9.10 opened a separate 16-interface zoom at its saved spacings of 17
 
 See the [microscope and two-mirror reference traces](../ZMX_IMPORT.md) and the [three-position zoom comparison](../ZOOM_IMPORT.md) for measured intercepts, pupil checks and focal lengths.
 
+### Reading `.len`
+
+The same command accepts centered sequential `.len` files. The [`.len` reader guide](../LEN_IMPORT.md) lists supported records, glass lookup, and the three-wavelength comparison for a double Gauss design.
+
 ### Archive and session inputs
 
 A `.zda` stores analysis-window and display settings. Open the adjacent `.zmx` with the same stem. All 460 session files in the inspected sample directory had a matching prescription and the same eight-byte binary prefix.
