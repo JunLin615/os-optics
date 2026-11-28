@@ -40,9 +40,8 @@ def test_the_smoke_script_runs_both_phases(tmp_path, monkeypatch, capsys):
         stub.state.confirm_payment()
         assert smoke.main(["phase2", "--work-dir", str(work)]) == 0
         second = json.loads(capsys.readouterr().out)["reports"][0]
-        assert second["drawing"]["status"] == "DETAILED_ASSEMBLY_DRAWING" and len(second["read_back_files"]) == 4
-        assert [second["artifacts"][p]["artifact_kind"] for p in ("validation", "drawing")] == [
-            "ASSEMBLY_LOCAL_VALIDATION", "ASSEMBLY_DRAWING"]
+        assert second["drawing"]["status"] == "DETAILED_ASSEMBLY_DRAWING" and len(second["drawing"]["files"]) == 4
+        assert "artifacts" not in second and stub.state.artifact_sets == {}  # drawings are never uploaded
     names = sorted(p.name for p in work.iterdir())
     assert names == ["assembly_local_validation.json", "drawing", "run", "state.json"]
     assert AGENT not in (work / "state.json").read_text(encoding="utf-8")

@@ -2,7 +2,11 @@
 
 * ``GET <origin>/api/v1/catalog``: the ``CatalogManifestV1`` (conditional with ``If-None-Match``: ``304`` = unchanged);
 * ``GET <release path>``: the exact bytes of one release (``gzip`` accepted), checked against the manifest's SHA-256
-  and size before anything is stored.
+  and size before anything is stored;
+* ``GET <origin>/api/v1/catalog/mechanical``: the public mechanical catalog manifest
+  (``opensci.public_mechanical_catalog.manifest``), when the service offers one (``404``: not offered, never an error),
+  and ``GET <its release path>``: the exact bytes of one mechanical release. A mirror's manifest URL (any other path)
+  names no mechanical manifest: there the mechanical catalog comes from ``catalog import`` or ``--mechanical FILE``.
 
 The service origin is ``OPENSCI_CATALOG_URL``, else ``OPENSCI_API_URL``, else the OpenSci service named in the packaged
 deployment defaults (``os_optics/deployment.toml``, see :mod:`os_optics.deployment`). A value that is a
@@ -25,7 +29,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .._vendor.shared_contracts.design_catalog import CatalogManifestV1, CatalogReleaseEntryV1
+from .._vendor.shared_contracts.design_catalog import CatalogManifestV1
 from .._version import DISTRIBUTION_NAME, __version__
 from ..deployment import default_service_origin
 from .errors import CatalogError, CatalogErrorCode
@@ -34,6 +38,7 @@ ENV_CATALOG_URL = "OPENSCI_CATALOG_URL"
 ENV_API_URL = "OPENSCI_API_URL"
 API_PREFIX = "/api/v1"
 MANIFEST_PATH = API_PREFIX + "/catalog"
+MECHANICAL_MANIFEST_PATH = MANIFEST_PATH + "/mechanical"
 USER_AGENT = f"{DISTRIBUTION_NAME}/{__version__}"
 LOOPBACK_NAMES = frozenset({"localhost"})
 HTTP_OK = 200
@@ -171,9 +176,10 @@ def release_url(manifest_location: str, path: str) -> str:
     return urllib.parse.urljoin(manifest_location, path)
 
 
-def fetch_release(url: str, entry: CatalogReleaseEntryV1, *, timeout: float) -> bytes:
+def fetch_release(url: str, entry: Any, *, timeout: float) -> bytes:
     """The exact bytes of one release (decoded from ``gzip`` when the service compressed them), at most
-    ``entry.size_bytes`` long; the caller verifies their SHA-256 before storing them."""
+    ``entry.size_bytes`` long (``entry``: a ``CatalogReleaseEntryV1`` or a mechanical ``MechanicalReleaseEntryV1``); the
+    caller verifies their SHA-256 before storing them."""
 
     status, headers, body = _get(url, {"Accept": "application/json", "Accept-Encoding": "gzip"}, timeout, entry.size_bytes * 2 + MAX_MANIFEST_BYTES)
     logger.debug("GET %s -> %s", urllib.parse.urlsplit(url).path, status)
@@ -186,3 +192,36 @@ def fetch_release(url: str, entry: CatalogReleaseEntryV1, *, timeout: float) -> 
         except zlib.error as exc:
             raise CatalogError(CatalogErrorCode.CATALOG_INTEGRITY_FAILED, f"the catalog download is not valid gzip: {exc}", {"url": url}) from None
     return body
+
+
+def mechanical_manifest_url(manifest_location: str) -> str | None:
+    """The mechanical manifest URL of the service whose optical manifest is ``manifest_location``: ``<origin>/api/v1/
+    catalog/mechanical`` when that is the service's own manifest route, else None (a mirror's manifest file names none)."""
+
+    parts = urllib.parse.urlsplit(manifest_location)
+    if parts.path.rstrip("/") != MANIFEST_PATH or not parts.scheme or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}{MECHANICAL_MANIFEST_PATH}"
+
+
+def fetch_mechanical_manifest(url: str, *, timeout: float) -> Any:
+    """The service's ``MechanicalCatalogManifestV1``, or None when it answers ``404`` (the service does not offer the
+    mechanical catalog). Any other answer that is not a valid manifest raises ``CATALOG_SERVICE_ERROR`` (with
+    ``details.http_status``), and a request that got no answer ``CATALOG_SERVICE_UNREACHABLE``."""
+
+    from ..assembly_plan.mechanical.model import MechanicalCatalogManifestV1
+
+    status, _, body = _get(url, {"Accept": "application/json"}, timeout, MAX_MANIFEST_BYTES)
+    logger.debug("GET %s -> %s", urllib.parse.urlsplit(url).path, status)
+    if status == HTTP_NOT_FOUND:
+        return None
+    if status != HTTP_OK:
+        raise _service_error(url, status, body, release=False)
+    if len(body) > MAX_MANIFEST_BYTES:
+        raise CatalogError(CatalogErrorCode.CATALOG_SERVICE_ERROR, "the mechanical catalog manifest is too large", {"url": url})
+    try:
+        return MechanicalCatalogManifestV1.model_validate_json(body)
+    except ValidationError as exc:
+        raise CatalogError(CatalogErrorCode.CATALOG_SERVICE_ERROR,
+                           "the catalog service answered with an invalid mechanical catalog manifest",
+                           {"url": url, "http_status": status, "problems": [e["msg"] for e in exc.errors()[:3]]}) from None

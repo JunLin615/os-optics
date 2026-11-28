@@ -4,12 +4,17 @@ Every failure of an ``OpenSciClient`` call is an ``OpenSciApiError`` (or a subcl
 
 * ``code``: a stable machine code (the service's error code, or one of the client codes below);
 * ``family``: the service's error family (``UNAUTHENTICATED``, ``FORBIDDEN``, ``NOT_FOUND``, ``CONFLICT``,
-  ``TOO_LARGE``, ``REJECTED``, ``RATE_LIMITED``, ``SERVER_ERROR``) or a client family (``CONFIGURATION``,
+  ``TOO_LARGE``, ``REJECTED``, ``RATE_LIMITED``, ``SERVER_ERROR``, ``GONE``) or a client family (``CONFIGURATION``,
   ``CONNECTION``, ``PROTECTED_CONTENT``, ``LOCAL_INPUT``, ``INTEGRITY``);
 * ``message`` and ``details``: what went wrong, as the service stated it;
 * ``recovery``: what to do next (a ``Recovery`` value; ``hint`` is one sentence saying the same);
 * ``http_status`` and ``request_id``: of the HTTP response, when there was one (quote ``request_id`` to OpenSci);
 * ``retry_after_seconds``: the wait the service advised (``Retry-After``), when it sent one (also in ``as_dict()``).
+
+Retired routes and options: the service answers ``ORDERING_BASIS_RETIRED`` and ``ROUTE_RETIRED`` with ``410`` (family
+``GONE``) and ``ORDER_OPTION_RETIRED`` with ``422``. The client maps them by code, whatever the status, to the recovery
+``USE_LOCAL_PLAN`` (the service's own recovery stays in ``details.service_recovery``); a command sets ``local_hint`` to
+the local command that replaces the retired one. ``BOM_CHANGES_UNCONFIRMED`` (409) is ``CONFIRM_BOM_CHANGES``.
 
 No error ever carries the Account token or a decryption grant.
 """
@@ -63,6 +68,11 @@ class Recovery(StrEnum):
     CHOOSE_OPTICS_ONLY = "CHOOSE_OPTICS_ONLY"
     # a part number of a part list is not one OpenSci supplies (details.line_ids): look the part numbers up again
     LIST_MECHANICAL_PRODUCTS = "LIST_MECHANICAL_PRODUCTS"
+    # BOM-only ordering (the service's values): buy the parts as a BOM; plan, preview and draw on this device; confirm
+    # the changed lines of a quote before ordering it
+    PURCHASE_BOM = "PURCHASE_BOM"
+    USE_LOCAL_PLAN = "USE_LOCAL_PLAN"
+    CONFIRM_BOM_CHANGES = "CONFIRM_BOM_CHANGES"
 
 
 #: The upgrade path after ``ENGINE_VERSION_NOT_ACCEPTED``; the service's message and details say the same.
@@ -154,6 +164,29 @@ RECOVERY_HINTS: dict[Recovery, str] = {
                                        "optical ones from 'os-optics catalog list', correct those lines and submit "
                                        "the part list again.",
 }
+
+#: What replaces the retired design-ordering path (the hint of ``PURCHASE_BOM`` / ``USE_LOCAL_PLAN``).
+LOCAL_PLAN_HINT = ("Ordering from a design, hosted assembly previews and drawings, optical layouts, mounting sheets and "
+                   "artifact uploads are retired: plan the assembly on this device and buy the parts as a BOM -- os-optics "
+                   "assembly plan derive PROJECT.json --out PLAN; os-optics assembly plan bom PLAN --purchase --out "
+                   "BOM.json; os-optics order quote BOM.json (previews and drawings: os-optics assembly plan preview / "
+                   "draw PLAN).")
+CONFIRM_BOM_HINT = ("This quote has changed lines that are not confirmed yet: review them and run 'os-optics order quote "
+                    "BOM.json --confirm REVIEW.json', then order the new resolution.")
+RECOVERY_HINTS[Recovery.PURCHASE_BOM] = LOCAL_PLAN_HINT
+RECOVERY_HINTS[Recovery.USE_LOCAL_PLAN] = LOCAL_PLAN_HINT
+RECOVERY_HINTS[Recovery.CONFIRM_BOM_CHANGES] = CONFIRM_BOM_HINT
+
+#: The retirement codes of the BOM-only service (mapped by code, not by status: see the module docstring).
+ORDERING_BASIS_RETIRED = "ORDERING_BASIS_RETIRED"
+ROUTE_RETIRED = "ROUTE_RETIRED"
+ORDER_OPTION_RETIRED = "ORDER_OPTION_RETIRED"
+RETIREMENT_CODES = frozenset({ORDERING_BASIS_RETIRED, ROUTE_RETIRED, ORDER_OPTION_RETIRED})
+#: The BOM review codes the commerce client acts on.
+BOM_CHANGES_UNCONFIRMED = "BOM_CHANGES_UNCONFIRMED"
+BOM_NOT_ORDERABLE = "BOM_NOT_ORDERABLE"
+BOM_CONFIRMATION_INVALID = "BOM_CONFIRMATION_INVALID"
+RESOLUTION_NOT_FOUND = "RESOLUTION_NOT_FOUND"
 
 #: Hints of codes whose recovery alone would mislead.
 CODE_HINTS: dict[str, str] = {
@@ -313,9 +346,12 @@ class OpenSciApiError(Exception):
     default_family = "REJECTED"
     #: The wait (seconds) the service advised in its ``Retry-After`` header, when it sent one.
     retry_after_seconds: float | None = None
-    #: What a call of several steps had completed when this error stopped it (``upload_assembly_results``: the parts
-    #: uploaded and read back, as it returns them); ``None`` for an error of a call that has no such steps.
+    #: What a call of several steps had completed when this error stopped it; ``None`` for an error of a call that has
+    #: no such steps.
     partial_results: dict[str, Any] | None = None
+    #: The hint of the command that met this error, when it says more than the code's hint (e.g. the local command that
+    #: replaces a retired one); ``hint`` returns it first.
+    local_hint: str | None = None
 
     def __init__(self, code: str, message: str, *, family: str | None = None, details: dict[str, Any] | None = None,
                  recovery: Recovery | str = Recovery.NONE, http_status: int | None = None,
@@ -339,11 +375,12 @@ class OpenSciApiError(Exception):
 
     @property
     def hint(self) -> str:
-        """One sentence saying what to do next: for a deliverable this purchase does not have, what it delivers instead
+        """One sentence saying what to do next: the command's own ``local_hint`` when it set one; for a deliverable this
+    purchase does not have, what it delivers instead
         (``purchase_kind_hint``); for paused artifact uploads whose uploads and for how long (``upload_pause_hint``);
         else ``CODE_HINTS[code]`` when the code says more than its recovery, else ``RECOVERY_HINTS[recovery]``."""
 
-        return (purchase_kind_hint(self.code, self.details)
+        return (self.local_hint or purchase_kind_hint(self.code, self.details)
                 or upload_pause_hint(self.code, self.details, self.retry_after_seconds)
                 or CODE_HINTS.get(self.code, RECOVERY_HINTS[self.recovery]))
 
@@ -420,6 +457,10 @@ def derive_recovery(status: int, code: str, details: dict[str, Any]) -> Recovery
         return Recovery.CHOOSE_OPTICS_ONLY
     if code == "PART_NOT_ORDERABLE":
         return Recovery.LIST_MECHANICAL_PRODUCTS
+    if code in RETIREMENT_CODES:
+        return Recovery.USE_LOCAL_PLAN
+    if code == BOM_CHANGES_UNCONFIRMED:
+        return Recovery.CONFIRM_BOM_CHANGES
     suggestion = details.get("suggestion") if isinstance(details, dict) else None
     action = suggestion.get("action") if isinstance(suggestion, dict) else None
     if isinstance(action, str) and action in Recovery.__members__:
@@ -476,7 +517,11 @@ def error_from_response(status: int, body: bytes, request_id: str | None) -> Ope
     message = str(error.get("message") or code)[:MAX_MESSAGE_CHARS]
     family = error.get("family") if isinstance(error.get("family"), str) else None
     recovery = error.get("recovery")
-    if not isinstance(recovery, str) or recovery not in Recovery.__members__:
+    if code in RETIREMENT_CODES:
+        # by code, whatever the status (410 GONE or 422): the local plan replaces every retired route and option
+        details = {**details, "service_recovery": recovery if isinstance(recovery, str) else None}
+        recovery = Recovery.USE_LOCAL_PLAN
+    elif not isinstance(recovery, str) or recovery not in Recovery.__members__:
         recovery = derive_recovery(status, code, details)
     elif recovery == Recovery.USE_OPTICAL_LAYOUT and details.get("delivery_mode") == COMPONENTS:
         recovery = Recovery.FIX_REQUEST  # products delivered as components have no optical layout to fall back to
@@ -487,6 +532,7 @@ def error_from_response(status: int, body: bytes, request_id: str | None) -> Ope
 
 __all__ = [
     "RECOVERY_HINTS",
+    "RETIREMENT_CODES",
     "ArtifactIntegrityError",
     "AssemblyDetailNotReleasedError",
     "LocalInputError",

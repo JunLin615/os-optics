@@ -4,6 +4,11 @@ Routes (as the commercial API serves them): ``GET /api/v1/catalog`` -> ``Catalog
 (the SHA-256 of the body) and ``If-None-Match`` -> 304; ``GET /api/v1/catalog/releases/<catalog_version>`` -> the exact
 release bytes (gzip ``Content-Encoding`` when the client accepts it and ``gzip`` is on), 404 for an unknown version.
 Every request is recorded (path, ``If-None-Match``, ``Accept-Encoding``).
+
+The public mechanical catalog: ``GET /api/v1/catalog/mechanical`` -> ``MechanicalCatalogManifestV1`` once a mechanical
+release is published (``publish_mechanical``), else ``404`` (not offered); ``mechanical_status`` other than 200 answers
+that status instead; ``GET /api/v1/catalog/mechanical/<mechanical_version>.json`` -> the exact release bytes (or
+``mechanical_served[version]`` when a test serves other bytes), 404 for an unknown version.
 """
 
 from __future__ import annotations
@@ -17,6 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 RELEASE_PREFIX = "/api/v1/catalog/releases/"
+MECHANICAL_MANIFEST = "/api/v1/catalog/mechanical"
+MECHANICAL_PREFIX = MECHANICAL_MANIFEST + "/"
 
 
 def release_entry(data: bytes, *, status: str = "RETAINED", published_at: str = "2026-10-01T00:00:00Z", schema_version: str | None = None,
@@ -36,6 +43,31 @@ class CatalogServiceState:
     release_path_template: str = "/api/v1/catalog/releases/{catalog_version}"
     requests: list[dict[str, Any]] = field(default_factory=list)
     manifest_status: int = 200
+    mechanical: dict[str, bytes] = field(default_factory=dict)  # mechanical_version -> published bytes
+    mechanical_served: dict[str, bytes] = field(default_factory=dict)  # mechanical_version -> bytes served instead
+    mechanical_entries: list[dict[str, Any]] = field(default_factory=list)
+    mechanical_current: str | None = None
+    mechanical_status: int = 200
+
+    def publish_mechanical(self, data: bytes, *, published_at: str = "2026-10-01T00:00:00Z", **entry: Any) -> dict[str, Any]:
+        """Publish ``data`` as the current mechanical release (``entry`` overrides manifest fields, e.g. ``sha256``)."""
+
+        document = json.loads(data)
+        row = {"mechanical_version": document["mechanical_version"], "schema_version": document["schema_version"],
+               "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data), "published_at": published_at,
+               "status": "RETAINED", **entry}
+        self.mechanical[row["mechanical_version"]] = data
+        self.mechanical_entries = [e for e in self.mechanical_entries if e["mechanical_version"] != row["mechanical_version"]] + [row]
+        self.mechanical_entries.sort(key=lambda e: e["published_at"], reverse=True)
+        self.mechanical_current = row["mechanical_version"]
+        return row
+
+    def mechanical_manifest(self) -> dict[str, Any]:
+        entries = [{**e, "status": "CURRENT" if e["mechanical_version"] == self.mechanical_current else "RETAINED"}
+                   for e in self.mechanical_entries]
+        current = next(e for e in entries if e["status"] == "CURRENT")
+        return {"schema": "opensci.public_mechanical_catalog.manifest", "manifest_version": "1.0", "current": current,
+                "retained": entries, "release_path_template": MECHANICAL_PREFIX + "{mechanical_version}.json"}
 
     def publish(self, data: bytes, *, current: bool = True, published_at: str = "2026-10-01T00:00:00Z", **entry: Any) -> dict[str, Any]:
         """Serve ``data`` and list it (as the current release unless ``current=False``), newest first."""
@@ -88,6 +120,23 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(304, headers={"ETag": etag})
                 return
             self._send(200, body, {"Content-Type": "application/json", "ETag": etag, "Cache-Control": "no-cache"})
+            return
+        if path == MECHANICAL_MANIFEST:
+            if state.mechanical_status != 200:
+                self._send(state.mechanical_status, json.dumps({"error": {"code": "SERVICE_UNAVAILABLE"}}).encode())
+            elif state.mechanical_current is None:
+                self._send(404, json.dumps({"error": {"code": "ROUTE_NOT_FOUND"}}).encode())
+            else:
+                self._send(200, json.dumps(state.mechanical_manifest(), sort_keys=True).encode("utf-8"),
+                           {"Content-Type": "application/json"})
+            return
+        if path.startswith(MECHANICAL_PREFIX):
+            version = path[len(MECHANICAL_PREFIX):].removesuffix(".json")
+            data = state.mechanical_served.get(version, state.mechanical.get(version))
+            if data is None:
+                self._send(404, json.dumps({"error": {"code": "MECHANICAL_CATALOG_RELEASE_NOT_FOUND"}}).encode())
+            else:
+                self._send(200, data, {"Content-Type": "application/json"})
             return
         version = path[len(RELEASE_PREFIX):] if path.startswith(RELEASE_PREFIX) else path.rsplit("/", 1)[-1].removesuffix(".json")
         data = state.releases.get(version)

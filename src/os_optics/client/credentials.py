@@ -12,6 +12,12 @@ A token file holds one token; surrounding whitespace is ignored. The token is ``
 part is its non-secret token id. It is held in an ``AccountToken``, whose ``repr`` / ``str`` show only the token id
 and where it came from; ``reveal()`` is the one way to read the secret. ``save_token_file`` writes a token file that
 only the current user can read.
+
+Without a token, ``resolve_token`` raises ``TOKEN_MISSING`` whose ``details.handoff`` says how to get one
+(``account_handoff``): the OpenSci Account registration and sign-in pages, which return to the token page
+(``<account>/register?next=%2Ftokens``, ``<account>/login?next=%2Ftokens``; ``<account>`` is ``OPENSCI_ACCOUNT_URL``, a base
+URL that may carry a path, else the packaged default), the token file to save the new token to, and the command to run
+again (``resume_command``, filled in by the command that needed the token). ``handoff_text`` is the same as text.
 """
 
 from __future__ import annotations
@@ -23,10 +29,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from ..deployment import default_account_origin
 from .errors import TOKEN_FILE_UNREADABLE, TOKEN_MALFORMED, TOKEN_MISSING, OpenSciConfigurationError, Recovery
 
 ENV_TOKEN = "OPENSCI_TOKEN"
 ENV_TOKEN_FILE = "OPENSCI_TOKEN_FILE"
+ENV_ACCOUNT_URL = "OPENSCI_ACCOUNT_URL"
+#: The Account page a registration or sign-in returns to (``next``, URL-encoded): where Agent tokens are created.
+TOKENS_RETURN_PATH = "%2Ftokens"
 DEFAULT_TOKEN_DIR = ".opensci"
 DEFAULT_TOKEN_FILE_NAME = "token"
 TOKEN_PATTERN = re.compile(r"oat_([0-9a-f]{32})_([0-9a-f]{64})")
@@ -95,6 +105,40 @@ class AccountToken:
         raise TypeError("an AccountToken cannot be pickled or copied")
 
 
+def account_base_url(environ: Mapping[str, str] | None = None) -> str:
+    """The OpenSci Account website: ``OPENSCI_ACCOUNT_URL`` (a base URL, possibly with a path), else the packaged
+    default (``os_optics/deployment.toml`` ``[account] origin``); without a trailing slash."""
+
+    env = os.environ if environ is None else environ
+    value = str(env.get(ENV_ACCOUNT_URL, "") or "").strip()
+    return (value or default_account_origin()).rstrip("/")
+
+
+def account_handoff(environ: Mapping[str, str] | None = None, *, home: Path | None = None,
+                    resume_command: str | None = None) -> dict[str, Any]:
+    """How a person without a token gets one and continues: ``{register_url, login_url, token_file, resume_command}``
+    (see the module docstring)."""
+
+    base = account_base_url(environ)
+    return {"register_url": f"{base}/register?next={TOKENS_RETURN_PATH}", "login_url": f"{base}/login?next={TOKENS_RETURN_PATH}",
+            "token_file": str(default_token_file(home)), "resume_command": resume_command}
+
+
+def handoff_text(handoff: Mapping[str, Any], *, kept: str | None = None, repeat_note: str | None = None) -> str:
+    """The handoff as the lines a person reads. ``kept``: what stays on this device meanwhile (e.g. the BOM file);
+    ``repeat_note``: why running the command again is safe."""
+
+    kept_text = f"; your {kept}" if kept else ""
+    resume = handoff.get("resume_command") or "the command you ran"
+    lines = [f"No OpenSci Account token on this device. Nothing was sent{kept_text}.",
+             f"1. Register:  {handoff['register_url']}   (or sign in: {handoff['login_url']})",
+             f"2. Create an Agent token there and save it to {handoff['token_file']} (or set {ENV_TOKEN_FILE}).",
+             f"3. Resume with the same command:  {resume}"]
+    if repeat_note:
+        lines.append(repeat_note)
+    return "\n".join(lines) + "\n"
+
+
 def default_token_file(home: Path | None = None) -> Path:
     """``~/.opensci/token``."""
 
@@ -147,7 +191,8 @@ def resolve_token(explicit: Any = None, *, environ: Mapping[str, str] | None = N
         return read_token_file(default, source=SOURCE_DEFAULT_FILE)
     raise OpenSciConfigurationError(
         TOKEN_MISSING, f"no OpenSci Account token: set {ENV_TOKEN} or {ENV_TOKEN_FILE}, or save one to {default}",
-        details={"searched": [ENV_TOKEN, ENV_TOKEN_FILE, str(default)]}, recovery=Recovery.PROVIDE_TOKEN)
+        details={"searched": [ENV_TOKEN, ENV_TOKEN_FILE, str(default)], "handoff": account_handoff(env, home=home)},
+        recovery=Recovery.PROVIDE_TOKEN)
 
 
 def _restrict_to_owner(path: Path) -> None:
@@ -216,10 +261,14 @@ def remove_token_file(path: str | os.PathLike[str]) -> bool:
 
 
 __all__ = [
+    "ENV_ACCOUNT_URL",
     "ENV_TOKEN",
     "ENV_TOKEN_FILE",
     "AccountToken",
+    "account_base_url",
+    "account_handoff",
     "default_token_file",
+    "handoff_text",
     "read_token_file",
     "remove_token_file",
     "resolve_token",

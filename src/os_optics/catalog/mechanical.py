@@ -20,7 +20,12 @@ Store layout (inside the catalog store directory, ``store_directory``)::
                              "stored": {<version>: {"sha256", "size_bytes", "publisher", "source", "stored_at"}},
                              "last_check": {...} | null}
 
-This module reads the store; adding releases (``catalog sync`` / ``catalog import``) belongs to the store writer.
+A release is written once (exact bytes, temporary file + rename) after its SHA-256, its size and its content were
+verified, and never replaced by different bytes (a mechanical version always denotes the same document). Every change of
+``state.json`` is a read-modify-write of the current index under the catalog store's lock (``catalog.locking``, the
+same lock as the optical store), so concurrent processes never lose a stored release. ``catalog sync`` and ``catalog
+import`` add releases (``MechanicalStore.add_release``); only OPENSCI documents are stored (a USER document is passed
+with ``--mechanical FILE`` and copied into the plan that binds it).
 """
 
 from __future__ import annotations
@@ -29,7 +34,8 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Iterable, Mapping
+import time
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +51,8 @@ from ..assembly_plan.mechanical.model import (
     MechanicalSources,
     load_mechanical_document,
 )
-from .store import store_directory
+from .errors import CatalogError, CatalogErrorCode
+from .store import CatalogStore, store_directory, utc_text
 
 ENV_MECHANICAL_CATALOG = "OS_OPTICS_MECHANICAL_CATALOG"
 MECHANICAL_DIR = "mechanical"
@@ -54,10 +61,32 @@ MECHANICAL_RELEASES_DIR = "releases"
 MECHANICAL_STATE_SCHEMA = "opensci.engine.mechanical_store"
 MECHANICAL_STATE_VERSION = "1"
 RECOVERY = ("os-optics catalog sync", "--mechanical FILE")
+SOURCE_SYNC = "sync"
+SOURCE_IMPORT = "import"
+SOURCES = (SOURCE_SYNC, SOURCE_IMPORT)
 
 
 def _version_ok(version: Any) -> bool:
     return isinstance(version, str) and re.fullmatch(OPENSCI_VERSION_PATTERN, version) is not None
+
+
+def empty_state() -> dict[str, Any]:
+    """The index of a store that holds no mechanical release."""
+
+    return {"schema": MECHANICAL_STATE_SCHEMA, "version": MECHANICAL_STATE_VERSION, "active": None, "stored": {},
+            "last_check": None}
+
+
+def _stored_record(record: Any) -> bool:
+    return (isinstance(record, dict) and isinstance(record.get("sha256"), str) and isinstance(record.get("size_bytes"), int)
+            and record.get("publisher") == PUBLISHER_OPENSCI)
+
+
+def _file_has(path: Path, digest: str) -> bool:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    except OSError:
+        return False
 
 
 class MechanicalStore:
@@ -85,13 +114,16 @@ class MechanicalStore:
         try:
             document = json.loads((self.root / MECHANICAL_STATE_FILE).read_bytes().decode("utf-8"))
         except (OSError, UnicodeDecodeError, ValueError, RecursionError):
-            return {"schema": MECHANICAL_STATE_SCHEMA, "version": MECHANICAL_STATE_VERSION, "active": None, "stored": {},
-                    "last_check": None}
+            return empty_state()
         if not isinstance(document, dict) or document.get("schema") != MECHANICAL_STATE_SCHEMA:
-            return {"schema": MECHANICAL_STATE_SCHEMA, "version": MECHANICAL_STATE_VERSION, "active": None, "stored": {},
-                    "last_check": None}
+            return empty_state()
         stored = document.get("stored")
-        return {**document, "stored": stored if isinstance(stored, dict) else {}}
+        stored = {v: r for v, r in stored.items() if _version_ok(v) and _stored_record(r)} if isinstance(stored, dict) else {}
+        active = document.get("active")
+        last_check = document.get("last_check")
+        return {"schema": MECHANICAL_STATE_SCHEMA, "version": MECHANICAL_STATE_VERSION,
+                "active": active if active in stored else None, "stored": stored,
+                "last_check": last_check if isinstance(last_check, dict) else None}
 
     def active_version(self) -> str | None:
         active = self.state().get("active")
@@ -130,6 +162,103 @@ class MechanicalStore:
     def active(self) -> LoadedMechanicalDocument | None:
         version = self.active_version()
         return None if version is None else self.release(version)
+
+    # ------------------------------------------------------------------------------------------------ writer
+
+    def _catalog_store(self) -> CatalogStore:
+        """The catalog store this mechanical store lives in (its lock and its atomic file writes)."""
+
+        return CatalogStore(self.root.parent)
+
+    def update_state(self, change: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+        """Apply ``change`` to the current index under the catalog store's lock and write the result when it differs;
+        ``change`` may raise to refuse (nothing is written)."""
+
+        store = self._catalog_store()
+        with store.lock():
+            current = self.state()
+            updated = change(current)
+            if updated != current:
+                data = (json.dumps(updated, indent=2, sort_keys=True) + "\n").encode("utf-8")
+                store._write_atomic(self.root / MECHANICAL_STATE_FILE, data)
+            return updated
+
+    def add_release(self, data: bytes, *, source: str, expected_sha256: str | None = None,
+                    expected_size: int | None = None, expected_version: str | None = None,
+                    activate: bool = True) -> tuple[dict[str, Any], LoadedMechanicalDocument]:
+        """Verify ``data`` and store it (unless already held), making it the active release when ``activate`` (or when
+        no release is active). Returns the written index and the loaded document.
+
+        Refuses bytes that differ from ``expected_sha256`` / ``expected_size`` (``CATALOG_INTEGRITY_FAILED``), a document
+        that is not a valid OPENSCI mechanical catalog (``MechanicalCatalogError``), a release whose version differs from
+        ``expected_version`` (``CATALOG_INTEGRITY_FAILED``), and different bytes under a version this device already
+        holds (``CATALOG_RELEASE_CONFLICT``; the stored release is kept). The bytes are verified before the lock is
+        taken; the release file and the index are written under it."""
+
+        if source not in SOURCES:
+            raise ValueError(f"source must be one of {', '.join(SOURCES)}")
+        digest = hashlib.sha256(data).hexdigest()
+        if expected_sha256 is not None and digest != expected_sha256:
+            raise CatalogError(CatalogErrorCode.CATALOG_INTEGRITY_FAILED,
+                               f"the downloaded mechanical catalog has SHA-256 {digest}, not the published {expected_sha256}; "
+                               "it was not used", {"expected_sha256": expected_sha256, "sha256": digest})
+        if expected_size is not None and len(data) != expected_size:
+            raise CatalogError(CatalogErrorCode.CATALOG_INTEGRITY_FAILED,
+                               f"the downloaded mechanical catalog has {len(data)} bytes, not the published {expected_size}; "
+                               "it was not used", {"expected_size_bytes": expected_size, "size_bytes": len(data)})
+        loaded = load_mechanical_document(data, source=MechanicalSourceKind.STORE, publisher=PUBLISHER_OPENSCI)
+        version = loaded.document.mechanical_version
+        if expected_version is not None and version != expected_version:
+            raise CatalogError(CatalogErrorCode.CATALOG_INTEGRITY_FAILED,
+                               f"the downloaded document is mechanical catalog {version}, not the published "
+                               f"{expected_version}; it was not used",
+                               {"mechanical_version": version, "expected_mechanical_version": expected_version})
+        path = self.release_file(version)
+        store = self._catalog_store()
+
+        def change(state: dict[str, Any]) -> dict[str, Any]:
+            held = state["stored"].get(version)
+            if held is not None and held["sha256"] != digest:
+                raise CatalogError(CatalogErrorCode.CATALOG_RELEASE_CONFLICT,
+                                   f"this device already holds a different mechanical catalog {version}; a mechanical "
+                                   "version always denotes the same document, so the stored release was kept",
+                                   {"mechanical_version": version, "stored_sha256": held["sha256"], "offered_sha256": digest})
+            if not _file_has(path, digest):  # absent, or damaged on disk: (re)write the verified bytes
+                store._write_atomic(path, data)
+            record = held if held is not None else {"sha256": digest, "size_bytes": len(data), "publisher": PUBLISHER_OPENSCI,
+                                                    "source": source, "stored_at": utc_text(time.time())}
+            return {**state, "stored": {**state["stored"], version: record},
+                    "active": version if activate or state["active"] is None else state["active"]}
+
+        state = self.update_state(change)
+        return state, loaded
+
+    def record_check(self, check: Mapping[str, Any]) -> dict[str, Any]:
+        """Record the outcome of the last mechanical manifest request (``last_check``); an unwritable store keeps its
+        index (the next check records again)."""
+
+        try:
+            return self.update_state(lambda state: {**state, "last_check": dict(check)})
+        except CatalogError:
+            return self.state()
+
+    def verify(self) -> list[dict[str, Any]]:
+        """Every stored release re-hashed against its recorded SHA-256 and re-validated (no network)."""
+
+        rows = []
+        state = self.state()
+        for version in sorted(state["stored"]):
+            record = state["stored"][version]
+            row: dict[str, Any] = {"mechanical_version": version, "sha256": record["sha256"], "ok": True}
+            try:
+                if self.release(version) is None:
+                    raise MechanicalCatalogError(MechanicalErrorCode.MECHANICAL_CATALOG_NOT_AVAILABLE,
+                                                 f"stored mechanical release {version} is missing from {self.root}",
+                                                 {"mechanical_version": version})
+            except MechanicalCatalogError as exc:
+                row.update(ok=False, problem=exc.as_dict())
+            rows.append(row)
+        return rows
 
 
 def environment_files(environ: Mapping[str, str] | None = None) -> tuple[str, ...]:

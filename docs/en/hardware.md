@@ -2,83 +2,78 @@
 
 [User guide](README.md) · English · [简体中文](../zh-CN/hardware.md)
 
-[OpenSci](https://opensci-optics.com/) connects optical design to component purchasing and assembly. Use the engine to develop the optical system locally, then continue with your OpenSci Account to obtain a component list, pricing, and a hardware configuration.
+[OpenSci](https://opensci-optics.com/) supplies the parts of your optical system. The engine designs and simulates the system on your computer and plans how it is mounted. It turns the plan into a purchase list (a BOM) that your OpenSci Account quotes and orders. The plan, its preview and its drawing are made on your computer, and none of them is uploaded.
 
 ## The workflow
 
-**Design → simulate → Local Validation → component and assembly configuration → order → hardware delivery**
+**Design → simulate → local assembly plan → purchase BOM → quote → order → delivery**
 
-Choose the route that fits your experiment:
+The BOM decides what you buy:
 
-| Route | What you purchase |
+| You buy | The BOM lists |
 | --- | --- |
-| Optical components | The optics selected by the design, with an Optical Layout Drawing |
-| Experimental assembly | Optics and their mechanical assembly configuration |
-| Existing optical table | A configuration that uses your own table, without a new breadboard |
-| Assembly service | Hardware with the available OpenSci assembly service |
+| Optical components only | The `OS-OPT-*` lines of your optics |
+| Optics with OpenSci mechanics | The optics plus the mounts, posts, post holders and breadboard of the plan (`OS-MECH-*`) |
+| Spare units | Extra lines with `"purpose": "SPARE"` |
+| A build on your own optical table | The plan's parts without the breadboard line |
+
+OpenSci checks that every line can be supplied. It does not check whether the parts fit together: the local plan does that, and so do its checks and drawing. You assemble the system yourself.
 
 ## Connect your Account
 
-Start at the [OpenSci website](https://opensci-optics.com/). Your Account provides the service URL and Agent-token setup. Configure `OPENSCI_API_URL` with that URL and complete the token setup shown in your Account. Then inspect the connection:
+Start at the [OpenSci website](https://opensci-optics.com/). Your Account gives you the service URL and the Agent-token setup. Set `OPENSCI_API_URL` to that URL, complete the token setup shown in your Account, and check the connection:
 
 ```bash
 os-optics account status
 ```
 
-Opening an encrypted Assembly Preview or Assembly Detail of a commercial resolution needs the optional `protected` extra, described in the [installation guide](installation.md#opening-encrypted-commercial-deliveries).
+You can plan and write the BOM before you have an Account. If no token is on this device, `os-optics order quote` sends nothing and keeps your BOM in its file. It prints the registration and sign-in pages of your Account and says where to save the token. Then you run the same command again. `OPENSCI_ACCOUNT_URL` selects another Account website. Sending the same BOM again gives the same request, so a repeated command never creates a second quote.
 
 ## Get a configuration
 
-Use the saved run for the design you want to purchase. The service evaluates purchase
-eligibility from the submitted design and its commercial requirements. Scientific
-target assessments remain separate: a met target does not establish orderability,
-and an unmet optional target is not a helper-side purchase veto.
-
-The command requests a configuration; it does not create or pay for an order:
+Plan the mounting of a saved Project on your computer, then write the purchase BOM. The plan uses the [mechanical catalog](mechanical-catalog.md) and works without a token or a network connection:
 
 ```bash
-os-optics resolve run
+os-optics assembly plan derive project.json --out plan
+os-optics assembly plan preview plan --out preview.zip --view
+os-optics assembly plan draw plan --out drawing --locale en
+os-optics assembly plan bom plan --purchase --out bom.json
 ```
 
-The response contains a `resolution_id`, the Customer Purchase BOM, current prices, and the assembly configuration. Variants include:
+You can also write the BOM yourself. Each line has an OpenSci part number and a quantity; `line_id` and `purpose` (`PLAN` or `SPARE`) are optional:
+
+```json
+{"schema": "opensci.commercial.part_list_submission", "schema_version": "2",
+ "lines": [{"opensci_sku": "OS-OPT-...", "quantity": 2},
+           {"opensci_sku": "OS-MECH-...", "quantity": 2, "purpose": "SPARE"}]}
+```
+
+Quote it:
 
 ```bash
-os-optics resolve run --optics-only
-os-optics resolve run --no-breadboard
-os-optics resolve run --assembly-service
+os-optics order quote bom.json
 ```
 
-Inspect the chosen resolution and its preview, replacing `RESOLUTION_ID` with the returned identifier:
+The quote reviews every line. The result is one of these:
 
-```bash
-os-optics resolution show RESOLUTION_ID --locale en
-os-optics assembly preview RESOLUTION_ID --view
-```
+- **Every line can be supplied** (`ORDERABLE`, exit 0). The output prints the prices and the next command, `os-optics order create RESOLUTION_ID`.
+- **Some lines cannot be supplied as listed** (`CHANGES_REQUIRED`, exit 1). A line may not be an orderable OpenSci product, may be temporarily unavailable, or may ask for more units than one line allows. The output lists those lines and writes `bom.review.json`. That file proposes to keep the other lines and to remove the changed ones. You can edit its decisions: for example, a smaller quantity for a line above the limit, or another part number. Then send it with `os-optics order quote bom.json --confirm bom.review.json`. The quote cannot be ordered until its changes are confirmed.
+- **No line can be supplied** (`BOM_NOT_ORDERABLE`, exit 67). The review file is written, nothing is stored, and you change the BOM before quoting again.
 
-The resolution describes how component positioning and retained degrees of freedom are implemented. Use `--locale zh-CN` for Chinese text. The assembly preview applies to configurations that include an assembly.
+`--schema-version 1` sends the earlier part-list form to a service that does not quote BOMs yet. That form has no `purpose` and no confirmation.
 
 ## Place the order
 
-Choose the shipping address in your OpenSci Account and review the component list, total, and agreement. The following command creates the order for the selected resolution:
+Choose the shipping address in your OpenSci Account. Review the lines, the total and the agreement of the quote, then create the order:
 
 ```bash
 os-optics order create RESOLUTION_ID
 ```
 
-Follow the payment instructions in the order. After transferring payment, report the transfer with `os-optics order report-transfer ORDER_ID`. OpenSci confirms receipt and makes the corresponding drawing deliverables available.
+Follow the payment instructions in the order. After the transfer, report it with `os-optics order report-transfer ORDER_ID`. OpenSci confirms receipt and ships the parts.
 
-For an assembly order:
+The assembly drawing comes from your local plan (`os-optics assembly plan draw`), in English or, with `--locale zh-CN`, in Chinese, as SVG and PDF. It is never uploaded.
 
-```bash
-os-optics assembly drawing RESOLUTION_ID --out drawing --locale en
-```
-
-For an optics-only order:
-
-```bash
-os-optics order layout ORDER_ID --out layout --locale en
-```
-
-Use `--locale zh-CN` to produce Chinese drawings. Drawings are available as SVG and PDF.
+OpenSci no longer orders designs, selects mounts, or delivers hosted previews, drawings, layouts and mounting sheets. The commands `resolve`, `assembly preview` and `assembly drawing` remain for an earlier service. Against the current service they print the local command that replaces them.
 
 Explore the platform and available products at **[opensci-optics.com](https://opensci-optics.com/)**.

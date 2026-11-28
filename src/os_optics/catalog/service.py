@@ -29,6 +29,13 @@ Policy (offline-first):
   and ``os-optics catalog sync`` / ``catalog use <catalog_version>`` / ``catalog import <file>``;
 * the browser runtime (Pyodide) never uses the network: its host installs the catalog (``json_api.install_catalog``).
 
+The public mechanical catalog (``opensci.public_mechanical_catalog``, ``catalog.mechanical``) is synchronized only
+by an explicit ``catalog sync`` (``sync_mechanical``, after the optical release): the service's mechanical manifest is
+asked for once; ``404`` means the service does not offer it (``NOT_OFFERED``, not an error); a release not on this
+device is downloaded (SHA-256, size and content verified) and made active. A connection failure, a timeout or a ``5xx``
+answer is ``UNAVAILABLE``: one line on stderr says so and the stored active mechanical release stays in use; the
+mechanical route never fails an optical synchronization. Automatic checks never touch the mechanical catalog.
+
 Concurrency: network requests run without the store lock; what they learned is then merged into the *current* index
 under the lock (``CatalogStore.update_state``). A check never overwrites what a newer check recorded, and a
 synchronization activates its target only while no newer check named a different current release, so concurrent
@@ -37,6 +44,7 @@ operations never lose a stored release or move the active release back.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -47,6 +55,9 @@ from typing import Any
 from .._vendor.shared_contracts.design_catalog import CatalogManifestV1, CatalogReleaseEntryV1
 from . import remote
 from .errors import CatalogError, CatalogErrorCode
+from .mechanical import SOURCE_IMPORT as MECHANICAL_SOURCE_IMPORT
+from .mechanical import SOURCE_SYNC as MECHANICAL_SOURCE_SYNC
+from .mechanical import MechanicalStore
 from .store import (
     SOURCE_IMPORT,
     SOURCE_SYNC,
@@ -84,6 +95,17 @@ CHOOSE_CATALOG_HELP = ("choose one: 'os-optics catalog use <catalog_version>' se
                        "active, 'os-optics catalog import <catalog file>' adds a release file and makes it active")
 #: The size of a release in a notice (MB, one decimal).
 BYTES_PER_MB = 1_000_000
+MECHANICAL_STATUS_SCHEMA = "opensci.engine.mechanical_catalog_status"
+#: The outcome of the mechanical part of ``catalog sync`` (``sync_mechanical``) and of ``catalog check``
+#: (``check_mechanical``: ``CHECKED`` instead of a download outcome).
+MECHANICAL_DOWNLOADED = "DOWNLOADED"
+MECHANICAL_ALREADY_STORED = "ALREADY_STORED"
+MECHANICAL_NOT_OFFERED = "NOT_OFFERED"
+MECHANICAL_FAILED = "FAILED"
+MECHANICAL_UNAVAILABLE = "UNAVAILABLE"
+MECHANICAL_CHECKED = "CHECKED"
+#: The lowest HTTP status of a service-side failure (a transient condition for the mechanical route).
+HTTP_SERVER_ERROR = 500
 
 
 def _environ(environ: Any) -> Any:
@@ -789,6 +811,173 @@ def release_bytes(catalog_version: str | None = None, *, environ: Any = None) ->
     return active, store.read_release(active)
 
 
+# ------------------------------------------------------------------------------------------------ mechanical catalog
+
+
+def _mechanical_store(environ: Any) -> MechanicalStore:
+    return MechanicalStore.from_environment(_environ(environ))
+
+
+def _mechanical_record(store: MechanicalStore, version: str | None) -> dict[str, Any] | None:
+    record = store.state()["stored"].get(version) if version is not None else None
+    return None if record is None else {"mechanical_version": version, **record}
+
+
+def mechanical_status(*, environ: Any = None) -> dict[str, Any]:
+    """The mechanical releases on this device (no network): the active one, every stored one and the last check."""
+
+    store = _mechanical_store(environ)
+    state = store.state()
+    return {"schema": MECHANICAL_STATUS_SCHEMA, "schema_version": STATUS_SCHEMA_VERSION, "store": str(store.root),
+            "active": _mechanical_record(store, state["active"]),
+            "stored": [_mechanical_record(store, version) for version in sorted(state["stored"])],
+            "last_check": state["last_check"]}
+
+
+def _mechanical_transient(error: CatalogError) -> bool:
+    """A failure that says nothing about the mechanical release: no answer, a timeout, or a ``5xx`` (``UNAVAILABLE``)."""
+
+    if error.code is CatalogErrorCode.CATALOG_SERVICE_UNREACHABLE:
+        return True
+    status = error.details.get("http_status")
+    return error.code is CatalogErrorCode.CATALOG_SERVICE_ERROR and isinstance(status, int) and status >= HTTP_SERVER_ERROR
+
+
+def _mechanical_manifest(environ: Any, timeout: float) -> tuple[str | None, Any]:
+    """``(manifest URL, manifest)`` of the configured service: ``(None, None)`` for a mirror's manifest URL (no
+    mechanical route), ``(url, None)`` when the service answered 404 (not offered)."""
+
+    url = remote.mechanical_manifest_url(remote.manifest_url(_environ(environ)))
+    if url is None:
+        return None, None
+    return url, remote.fetch_mechanical_manifest(url, timeout=timeout)
+
+
+def _mechanical_failure(block: dict[str, Any], error: CatalogError | Exception) -> dict[str, Any]:
+    transient = isinstance(error, CatalogError) and _mechanical_transient(error)
+    detail = error.as_dict() if hasattr(error, "as_dict") else {"code": type(error).__name__, "message": str(error)}
+    return {**block, "outcome": MECHANICAL_UNAVAILABLE if transient else MECHANICAL_FAILED, "error": detail}
+
+
+def _announce_mechanical_unavailable(block: dict[str, Any]) -> None:
+    """One line on stderr when the mechanical catalog could not be checked (the optical result is unaffected)."""
+
+    active = block.get("active") or "none"
+    error = block.get("error") or {}
+    notice = (f"os-optics: the public mechanical catalog could not be checked ({error.get('code')}); the stored "
+              f"mechanical release ({active}) stays in use\n")
+    try:
+        sys.stderr.write(notice)
+        sys.stderr.flush()
+    except (OSError, ValueError, AttributeError):  # no usable stderr (a closed stream, an embedding host)
+        pass
+
+
+def check_mechanical(*, environ: Any = None, timeout: float = EXPLICIT_TIMEOUT_SECONDS) -> dict[str, Any]:
+    """Ask the service for its mechanical manifest (nothing downloaded): ``outcome`` ``CHECKED`` (``current``,
+    ``up_to_date``), ``NOT_OFFERED``, ``UNAVAILABLE`` or ``FAILED`` (``error``). Never raises for the service's answer."""
+
+    _require_network()
+    store = _mechanical_store(environ)
+    active = store.active_version()
+    block: dict[str, Any] = {"offered": None, "manifest_url": None, "active": active, "current": None, "up_to_date": None}
+    try:
+        url, manifest = _mechanical_manifest(environ, timeout)
+    except CatalogError as exc:
+        block = _mechanical_failure(block, exc)
+    else:
+        block["manifest_url"] = url
+        if manifest is None:
+            block.update(offered=False, outcome=MECHANICAL_NOT_OFFERED)
+        else:
+            current = manifest.current.model_dump(mode="json")
+            held = store.state()["stored"].get(active) if active else None
+            block.update(offered=True, outcome=MECHANICAL_CHECKED, current=current,
+                         up_to_date=active == current["mechanical_version"] and held is not None
+                         and held["sha256"] == current["sha256"])
+    store.record_check({"checked_at": utc_text(time.time()), "outcome": block["outcome"], "manifest_url": block["manifest_url"],
+                        "current": block["current"]})
+    if block["outcome"] == MECHANICAL_UNAVAILABLE:
+        _announce_mechanical_unavailable(block)
+    return block
+
+
+def sync_mechanical(*, environ: Any = None, timeout: float = EXPLICIT_TIMEOUT_SECONDS) -> dict[str, Any]:
+    """The mechanical part of ``catalog sync`` (module docstring): ``{offered, mechanical_version, sha256, outcome,
+    active, error?}`` with outcome ``DOWNLOADED`` / ``ALREADY_STORED`` (either way the service's current release is the
+    active one now), ``NOT_OFFERED``, ``UNAVAILABLE`` or ``FAILED`` (integrity or validation; nothing stored). Never
+    raises for the service's answer."""
+
+    _require_network()
+    store = _mechanical_store(environ)
+    block: dict[str, Any] = {"offered": None, "mechanical_version": None, "sha256": None, "active": store.active_version()}
+    try:
+        url, manifest = _mechanical_manifest(environ, timeout)
+        if manifest is None:
+            block.update(offered=False, outcome=MECHANICAL_NOT_OFFERED)
+        else:
+            entry = manifest.current
+            block.update(offered=True, mechanical_version=entry.mechanical_version, sha256=entry.sha256)
+            held = store.state()["stored"].get(entry.mechanical_version)
+            intact = False
+            if held is not None and held["sha256"] == entry.sha256:
+                try:
+                    intact = store.release(entry.mechanical_version, expected_sha256=entry.sha256) is not None
+                except ValueError:  # MechanicalCatalogError (a damaged file): the release is downloaded again below
+                    intact = False
+            if intact:
+                store.update_state(lambda state: {**state, "active": entry.mechanical_version})
+                block["outcome"] = MECHANICAL_ALREADY_STORED
+            else:
+                location = remote.release_url(url, manifest.release_path(entry.mechanical_version))
+                data = remote.fetch_release(location, entry, timeout=timeout)
+                store.add_release(data, source=MECHANICAL_SOURCE_SYNC, expected_sha256=entry.sha256,
+                                  expected_size=entry.size_bytes, expected_version=entry.mechanical_version, activate=True)
+                block["outcome"] = MECHANICAL_DOWNLOADED
+    except CatalogError as exc:
+        block = _mechanical_failure(block, exc)
+    except ValueError as exc:  # MechanicalCatalogError: the downloaded document is not a valid mechanical catalog
+        block = _mechanical_failure(block, exc)
+    block["active"] = store.active_version()
+    store.record_check({"checked_at": utc_text(time.time()), "outcome": block["outcome"],
+                        "mechanical_version": block["mechanical_version"], "sha256": block["sha256"]})
+    if block["outcome"] == MECHANICAL_UNAVAILABLE:
+        _announce_mechanical_unavailable(block)
+    return block
+
+
+def is_mechanical_document(data: bytes) -> bool:
+    """Whether ``data`` is a JSON document that names the public mechanical catalog schema (``catalog import``)."""
+
+    from ..assembly_plan.mechanical.model import MECHANICAL_CATALOG_SCHEMA_ID
+
+    try:
+        document = json.loads(data)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return False
+    return isinstance(document, dict) and document.get("schema") == MECHANICAL_CATALOG_SCHEMA_ID
+
+
+def import_mechanical(source: Any, *, activate: bool = True, environ: Any = None) -> dict[str, Any]:
+    """Store an OPENSCI mechanical catalog document from a file (path) or its bytes and make it the active one (unless
+    ``activate=False``; a store with none active takes it anyway). A USER document is refused
+    (``MechanicalCatalogError``): pass it with ``--mechanical FILE``."""
+
+    data = bytes(source) if isinstance(source, (bytes, bytearray, memoryview)) else Path(source).read_bytes()
+    store = _mechanical_store(environ)
+    state, loaded = store.add_release(data, source=MECHANICAL_SOURCE_IMPORT, activate=activate)
+    return {"status": "IMPORTED", "mechanical_version": loaded.document.mechanical_version, "sha256": loaded.sha256,
+            "size_bytes": loaded.size_bytes, "active": state["active"]}
+
+
+def verify_mechanical(*, environ: Any = None) -> dict[str, Any]:
+    """Every stored mechanical release re-hashed and re-validated (no network): ``{ok, active, releases}``."""
+
+    store = _mechanical_store(environ)
+    rows = store.verify()
+    return {"ok": all(row["ok"] for row in rows), "active": store.active_version(), "releases": rows}
+
+
 def mark_release_validated(release: StoredRelease, *, environ: Any = None) -> None:
     """Record in the store index that this Engine's catalog contract validated the whole document of ``release``
     (``CatalogStore.mark_validated``)."""
@@ -807,15 +996,21 @@ __all__ = [
     "automatic_access",
     "check",
     "check_interval",
+    "check_mechanical",
     "fetch_release",
+    "import_mechanical",
     "import_release",
+    "is_mechanical_document",
     "mark_release_validated",
+    "mechanical_status",
     "network_available",
     "newest_stored_note",
     "release_bytes",
     "sha256_hex",
     "status",
     "sync",
+    "sync_mechanical",
     "use_release",
     "verify",
+    "verify_mechanical",
 ]

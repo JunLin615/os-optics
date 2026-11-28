@@ -14,8 +14,7 @@ Two phases, because OpenSci confirms the payment outside this API (the operator 
     # now confirm the payment of the printed Order Number with the instance's operator console
     python scripts/commercial_flow_smoke.py phase2 --work-dir WORK [--wait-for-confirmation SECONDS]
         (poll the Order until OpenSci confirmed it) -> Assembly Detail in memory -> Detailed Assembly Drawing written
-        to WORK/drawing -> upload validation then drawing -> read back: sets listed, every drawing file downloaded
-        and compared byte for byte; a repeated upload replays
+        to WORK/drawing (drawings are never uploaded: they stay on this device)
 
 The local run uses the public optical catalog of the local catalog store (synchronized from the instance's catalog
 service, ``OPENSCI_CATALOG_URL`` / ``OPENSCI_API_URL``), or the release file given with ``--catalog``; the report names
@@ -163,19 +162,7 @@ def phase2(client: OpenSciClient, work: Path, args: argparse.Namespace) -> dict[
     expect(drawing.delivery_ready, f"the drawing is {drawing.drawing_status.value}")
     report["drawing"] = {"status": drawing.drawing_status.value, "detail_content_hash": detail.content_hash,
                          "files": sorted(p.name for p in out.iterdir())}
-
-    uploaded = client.upload_assembly_results(resolution_id, drawing=drawing, preview=preview)
-    again = client.upload_assembly_results(resolution_id, drawing=drawing, preview=preview)
-    expect(all(view["replayed"] for view in again.values()), "a repeated upload stored a new artifact set")
-    listed = {s["artifact_set_id"] for s in client.artifact_sets(resolution_id)["artifact_sets"]}
-    expect({v["artifact_set_id"] for v in uploaded.values()} <= listed, "uploaded sets are not listed")
-    drawing_set = client.artifact_set(uploaded["drawing"]["artifact_set_id"])
-    for entry in drawing_set["files"]:
-        data = client.artifact_file(drawing_set["artifact_set_id"], entry["role"])
-        expect(data == (out / entry["filename"]).read_bytes(), f"{entry['filename']} read back differs")
-    report["artifacts"] = {part: {"artifact_set_id": view["artifact_set_id"], "artifact_kind": view["artifact_kind"],
-                                  "replayed": view["replayed"]} for part, view in uploaded.items()}
-    report["read_back_files"] = [entry["filename"] for entry in drawing_set["files"]]
+    # (drawings are never uploaded: they stay on this device)
     return report
 
 
