@@ -28,7 +28,7 @@ _DEFAULT_PUPIL = ((0.0, 0.0), (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0))
 def _focal_length(project, wavelength_nm, catalog):
     # The first-order system is measured on its optical axis, including when every light source is an off-axis field.
     optics = tuple(c for c in project.components if c.optical_role != 'source')
-    components = [c.instance_id for c in optics if c.optical_role in ('lens', 'mirror')]
+    components = [c.instance_id for c in optics if c.optical_role not in ('aperture', 'detector', 'dump')]
     if not components:
         raise ValueError('IMAGE_F_NUMBER requires a system with optical power')
     axial = project.model_copy(update={'components': optics, 'targets': ()})
@@ -79,7 +79,7 @@ def system_aperture_analysis(project: Any, *, source_id: str, configuration_id: 
 
     For a finite conjugate, ``object_na`` is the axial numerical aperture at the field's object plane. The pupil
     coordinate frame is shared by all fields. A paraxial image f-number uses the effective focal length of the selected
-    state's ordered lenses and mirrors. ``catalog`` and ``project`` accept the same inputs as ``lower_project``.
+    state's ordered optical components. ``catalog`` and ``project`` accept the same inputs as ``lower_project``.
     """
     document = configured_project(project, configuration_id)
     return {**_geometry(document, source_id, catalog), 'configuration_id': configuration_id}
@@ -91,8 +91,8 @@ def _launch_points(source, geometry, coordinates):
     dz = z - source.position[2]
     if geometry['object_conjugate'] == 'FINITE':
         origins = np.broadcast_to(source.position, pupil.shape)
-        slopes = (pupil - origins) / dz  # virtual pupils behind the object still launch towards +Z
-        return origins, slopes / np.linalg.norm(slopes, axis=1, keepdims=True)
+        vectors = (pupil - origins) * math.copysign(1, dz)  # virtual pupils behind the object still launch towards +Z
+        return origins, vectors / np.hypot.reduce(vectors, axis=1, keepdims=True)
     if source.direction[2] <= 0:
         raise ValueError('a centered infinite field must propagate towards increasing design Z')
     directions = np.broadcast_to(source.direction, pupil.shape)
@@ -119,9 +119,13 @@ def _trace_component(scene, library, cfg, src, spectrum, share, origins, directi
     for (plane, _, spectral_index), rows in trace.rows.items():
         wavelength = spectrum[spectral_index][0]
         for k, sample in enumerate(rows.sample_index):
-            rays[(wavelength, sample)]['observations'].append({'observation_id': plane, 'u_mm': rows.u_mm[k],
-                'v_mm': rows.v_mm[k], 'direction_u': rows.direction_u[k], 'direction_v': rows.direction_v[k],
-                'direction_n': rows.direction_n[k], 'power_W': rows.power_W[k], 'counted': rows.counted[k]})
+            n = rows.refractive_indices[k]
+            rays[(wavelength, sample)]['observations'].append({
+                'observation_id': plane, 'path_id': rows.path_ids[k], 'u_mm': rows.u_mm[k], 'v_mm': rows.v_mm[k],
+                'direction_u': rows.direction_u[k], 'direction_v': rows.direction_v[k], 'direction_n': rows.direction_n[k],
+                'refractive_index': n, 'numerical_aperture': n * math.hypot(rows.direction_u[k], rows.direction_v[k]),
+                'power_W': rows.power_W[k], 'counted': bool(rows.counted[k]),
+            })
     return [issue.model_dump(mode='json') for issue in tracer.out.issues]
 
 
@@ -131,7 +135,7 @@ def trace_system_pupil(project: Any, *, source_id: str, pupil_coordinates: Seque
 
     The default samples the center and four cardinal rim points. Explicit radii greater than one probe physical clipping
     outside the declared pupil. All emitted lines share the primary aiming geometry. A named wavelength selects one line,
-    or the primary reference at unit relative weight if it is absent from the source spectrum.
+    or the primary reference at zero emitted power if it is absent from the source spectrum.
     """
     document = configured_project(project, configuration_id)
     geometry = _geometry(document, source_id, catalog)
@@ -151,13 +155,24 @@ def trace_system_pupil(project: Any, *, source_id: str, pupil_coordinates: Seque
             spectrum = ((wavelength_nm, 1.0),)
         if not spectrum:
             raise ValueError('wavelength_nm must select an emitted vacuum wavelength or the primary wavelength')
+    emitted = dict(source.spectrum)
     rays = {(w, k): {'pupil_coordinate': coord.tolist(), 'inside_system_aperture': math.hypot(*coord) <= 1,
-                      'wavelength_nm': w, 'spectral_weight': weight, 'origin_mm': origins[k].tolist(),
+                      'wavelength_nm': w, 'spectral_weight': emitted.get(w, 0.0), 'reference_only': w not in emitted,
+                      'origin_mm': origins[k].tolist(),
                       'direction': directions[k].tolist(), 'paths': [], 'observations': []}
             for k, coord in enumerate(coords) for w, weight in spectrum}
     issues = []
     for component, share in source_components(source):
         issues.extend(_trace_component(scene, library, cfg, component, spectrum, share, origins, directions, rays))
+    # A zero-weight primary uses a unit-weight geometric probe internally. No emitted power belongs to its paths.
+    for ray in rays.values():
+        if ray['reference_only']:
+            for crossing in ray['observations']:
+                crossing['power_W'] = 0.0
+            for path in ray['paths']:
+                path['final_power_W'] = 0.0
+                for segment in path['segments']:
+                    segment['power_start_W'] = segment['power_end_W'] = 0.0
     return {**geometry, 'configuration_id': configuration_id, 'rays': list(rays.values()), 'issues': issues}
 
 

@@ -94,6 +94,9 @@ class SampledRows:
     # Geometric pupil analyses also retain a crossing with unknown power (None).
     power_W: list[float | None] = field(default_factory=list)
     counted: list[bool] = field(default_factory=list)
+    # Additional crossing data retained by an explicit geometric pupil analysis.
+    path_ids: list[str] = field(default_factory=list)
+    refractive_indices: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -412,6 +415,9 @@ class SampleTracer(Tracer):
         rows.direction_n.append(float(dot(d, surf.normal)))
         rows.power_W.append(pk.chief_power() if pk.power_bound_W is None else None)
         rows.counted.append(on_area and accepted is not False)
+        if self._geometric_pupil:
+            rows.path_ids.append(pk.path_id)
+            rows.refractive_indices.append(pk.n)
         pk.lineage.append(f"{surf.surface_id}:observe")
         self._end_event(pk, "observed")
         if inter.absorbing and on_area:

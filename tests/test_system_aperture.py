@@ -64,6 +64,8 @@ def test_finite_virtual_entrance_pupil_and_true_na():
     assert row["origin_mm"] == [.5, 0, -10]
     assert row["direction"] == pytest.approx((-1 / math.sqrt(5), 0, 2 / math.sqrt(5)))
     assert row["paths"][0]["wavelength_nm"] == 600
+    assert row["reference_only"] and row["spectral_weight"] == 0
+    assert row["paths"][0]["segments"][0]["power_start_W"] == 0
     with pytest.raises(ValueError, match="vacuum wavelength"):
         trace_system_pupil(doc, source_id=FIELD, wavelength_nm=601)
 
@@ -82,6 +84,27 @@ def test_image_f_number_uses_current_native_efl_and_shared_plane():
         assert row["origin_mm"] == pytest.approx([x - 10 * math.tan(angle), y, -10])
     doc["optical_models"][1]["model"]["focal_length_mm"] = "10"
     assert system_aperture_analysis(doc, source_id=FIELD)["entrance_pupil_radius_mm"] == pytest.approx(1)
+
+
+def test_geometric_branches_and_unknown_field_source():
+    from os_optics.local import json_api
+
+    doc = project(aperture())
+    splitter = json_api.build_native_model("splitter.plate", {"diameter_mm": "25.4", "reflectance": "0.5",
+                                           "valid_band_nm": ["400", "1000"], "model_id": "bs"})
+    doc["optical_models"].append(splitter["optical_model"])
+    doc["model_coatings"] = splitter["model_coatings"]
+    doc["components"].append(declared_component("BS", "splitter", "bs", position=(0, 0, 5), quaternion=IDENTITY))
+    doc["components"][0]["source_model"]["polarization"] = {"kind": "UNPOLARIZED"}
+    result = trace_system_pupil(doc, source_id=FIELD, pupil_coordinates=[(0, .1), (.3, .4)], wavelength_nm=550)
+    rays = json.loads(json.dumps(result))["rays"]
+    for k, row in enumerate(rays):
+        roots = {f"SRC#0.{k}", f"SRC#0:p1.{k}"}
+        assert {p["parent_path_id"] for p in row["paths"] if p["parent_path_id"]} == roots
+        assert {o["path_id"] for o in row["observations"]} == roots
+        assert sum(o["power_W"] for o in row["observations"]) == pytest.approx(.00025)
+    with pytest.raises(ValueError, match="field source"):
+        trace_system_pupil(doc, source_id="BS")
 
 
 def test_float_by_stop_and_located_invalid_combinations():
