@@ -48,7 +48,8 @@ FORBIDDEN_TOKENS = (
     "candidate_key", "placement_key",
 )
 ASSEMBLY_WHEEL_PREFIXES = ("os_optics/assembly/", "os_optics/_vendor/shared_contracts/assembly_preview/",
-                           "os_optics/assembly_drawing/", "os_optics/_vendor/shared_contracts/assembly_detail/")
+                           "os_optics/assembly_drawing/", "os_optics/_vendor/shared_contracts/assembly_detail/",
+                           "os_optics/assembly_plan/")
 # Reviewed pre-existing hits elsewhere in the wheel (not assembly code). Any hit not listed here fails.
 KNOWN_WHEEL_HITS = {
     ("os_optics/_vendor/shared_contracts/common/frozen_string_map.py", "candidate_key"),  # a loop variable name
