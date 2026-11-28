@@ -170,14 +170,15 @@ class _Edit:
 
     def replace_items(self, built: list[dict[str, Any]], links: list[dict[str, Any]] | None, chain_ids: set[str]) -> None:
         orders = {i["item_id"]: i["placement"]["assembly_order"] for i in self.data["items"] if i.get("placement")}
-        fresh = self.next_order()
-        for item in built:
-            if item.get("placement"):
-                if item["item_id"] in orders:
-                    item["placement"]["assembly_order"] = orders[item["item_id"]]
-                else:
-                    item["placement"]["assembly_order"] = fresh
-                    fresh += 1
+        placed = [item for item in built if item.get("placement")]
+        if all(item["item_id"] in orders for item in placed):  # the same parts again: their assembly order is kept
+            for item in placed:
+                item["placement"]["assembly_order"] = orders[item["item_id"]]
+        else:  # new parts: the built order (board first, each part after its support), after every other part
+            fresh = self.next_order()
+            for item in sorted(placed, key=lambda i: i["placement"]["assembly_order"]):
+                item["placement"]["assembly_order"] = fresh
+                fresh += 1
         ids = {i["item_id"] for i in built}
         self.data["items"] = sorted([i for i in self.data["items"] if i["item_id"] not in ids] + built, key=lambda i: i["item_id"])
         if links is not None:
@@ -250,6 +251,10 @@ class _Edit:
                     dofs.append({"axis": retained.axis.value, "requested_control": retained.control.value, "status": "NOT_DELIVERED",
                                  "mechanism": "NONE", "not_delivered_reason": "NO_COMPATIBLE_HARDWARE"})
             dofs.sort(key=lambda d: ("Tx", "Ty", "Tz", "Rx", "Ry", "Rz").index(d["axis"]))
+        for link in b.links:  # a post lifted out of its holder: the link states no negative depth (the check reports it)
+            interface = link.get("interface") or {}
+            if interface.get("depth_mm") is not None and interface["depth_mm"] < 0.0:
+                interface["depth_mm"] = 0.0
         chain_ids = {optic.item_id, *hardware_ids.values()}
         self.replace_items(b.items, b.links, chain_ids)
         if not placement.resolved:
@@ -604,6 +609,9 @@ def op_set_mounting(edit: _Edit, op: Any) -> None:
     instance = optic.design_instance_id
     if op.mounting is MountingV1.ANCHOR:
         hardware = chain_items(edit.model, optic.item_id)
+        data = edit.item_dict(optic.item_id)
+        data["mounting"] = MountingV1.ANCHOR.value
+        data["placement"] = {"pose_in_lab": data["placement"]["pose_in_lab"], "assembly_order": data["placement"]["assembly_order"]}
         edit.retire({h.item_id for h in hardware.values()})
         c = replace(edit.classified(instance), mounting=MountingV1.ANCHOR, supply=optic.supply, supply_reason=optic.supply_reason)
         if optic.supply is SupplyV1.OPENSCI and c.supply_reason is SupplyReasonV1.OPENSCI_SUPPLIED_UNMOUNTED:
@@ -618,27 +626,11 @@ def op_set_mounting(edit: _Edit, op: Any) -> None:
         return
     if edit.context.optic_mechanics(optic) is None:
         raise edit.fail(PlanOpErrorCode.KIND_MISMATCH, f"{optic.item_id}: the optic has no mechanics a mount can hold")
-    item = edit.item_dict(optic.item_id)
-    item["mounting"] = "CHAIN"
-    item.pop("envelope", None)
-    if item.get("supply_reason") == SupplyReasonV1.OPENSCI_SUPPLIED_UNMOUNTED.value:
-        item.pop("supply_reason")
+    reason = None if optic.supply_reason is SupplyReasonV1.OPENSCI_SUPPLIED_UNMOUNTED else optic.supply_reason
+    model_optic = optic.model_copy(update={"mounting": MountingV1.CHAIN, "supply_reason": reason})
     ids = {role: edit.new_id(HARDWARE_PREFIX[role]) for role in HARDWARE_ROLES}
-    model_optic = replace_item_model(optic, item)
     placed = edit.place_chain(model_optic, edit.lab_of(instance), None, hole=None)
     edit.build_chain(model_optic, placed, ids)
-
-
-def replace_item_model(original: Any, data: dict[str, Any]) -> Any:
-    """A lightweight stand-in for an item whose dict changed (only the fields the chain builder reads)."""
-
-    supply_reason = data.get("supply_reason")
-    return replace_obj(original, mounting=MountingV1(data["mounting"]),
-                       supply_reason=None if supply_reason is None else SupplyReasonV1(supply_reason))
-
-
-def replace_obj(model: Any, **changes: Any) -> Any:
-    return model.model_copy(update=changes)
 
 
 def op_rederive_chain(edit: _Edit, op: Any) -> None:
