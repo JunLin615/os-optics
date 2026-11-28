@@ -557,7 +557,8 @@ class TabulatedDispersionV1(OmitAbsentFields, StrictContractModel):
     and that formula anywhere inside the valid band; ``MEASURED`` -- the table is the source's own measured index, its
     sample points as published (``measurement``: the conditions stated with them), with no formula to differ from:
     ``max_interpolation_error`` is then absent unless a separate reference establishes one. A table bounds the index only;
-    its derivatives (group index, group-delay dispersion) are not bounded by it.
+    its derivatives (group index, group-delay dispersion) are not bounded by it. A native Project may also use
+    ``SOURCE_TABLE`` when the source supplies the nodes themselves and gives no measurement or formula metadata.
     """
 
     _omit_when_none: ClassVar[tuple[str, ...]] = ("origin", "max_interpolation_error", "measurement")
@@ -567,7 +568,7 @@ class TabulatedDispersionV1(OmitAbsentFields, StrictContractModel):
     refractive_index: tuple[OpticalDecimal, ...] = Field(min_length=2)
     interpolation: Literal["PCHIP"] = "PCHIP"
     max_interpolation_error: OpticalDecimal | None = None
-    origin: Literal["SOURCE_FORMULA", "MEASURED"] | None = None
+    origin: Literal["SOURCE_FORMULA", "MEASURED", "SOURCE_TABLE"] | None = None
     measurement: TableMeasurementV1 | None = None
 
     @model_validator(mode="after")
@@ -579,6 +580,10 @@ class TabulatedDispersionV1(OmitAbsentFields, StrictContractModel):
             raise ValueError("wavelength_nm must be strictly increasing")
         for n in self.refractive_index:
             _positive(n, "refractive_index")
+        if self.origin == "SOURCE_TABLE":
+            if self.measurement is not None or self.max_interpolation_error is not None:
+                raise ValueError("SOURCE_TABLE represents source nodes without measurement or formula-error metadata")
+            return self
         measured = self.origin == "MEASURED"
         if not measured and self.max_interpolation_error is None:
             raise ValueError("a table of a source formula states its max_interpolation_error")
@@ -711,6 +716,9 @@ class PublicMaterialV1(OmitAbsentFields, StrictContractModel):
             raise ValueError(f"material {self.material_id}: the valid band must be an interval")
         if self.material_id in RESERVED_MEDIA:
             raise ValueError(f"{self.material_id} is a reserved medium, not a published material")
+        laws = (self.dispersion, self.birefringence.extraordinary) if self.birefringence else (self.dispersion,)
+        if any(isinstance(law, TabulatedDispersionV1) and law.origin == "SOURCE_TABLE" for law in laws):
+            raise ValueError("SOURCE_TABLE is a native Project material origin")
         problem = material_physics_problem(self)
         if problem is not None:
             raise ValueError(f"material {self.material_id}: {problem}")

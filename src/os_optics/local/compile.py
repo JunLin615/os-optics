@@ -295,6 +295,7 @@ from ..contracts.materials import (
     SecondHarmonicGeneration,
     SellmeierIndexLaw,
     SellmeierMaterial,
+    SourceTableIndexMaterial,
     TabulatedCoating,
     TabulatedIndexLaw,
     TabulatedIndexMaterial,
@@ -762,8 +763,10 @@ def _crystal_physics_problem(material: Any, what: str) -> None:
         reasons.append("thermo_optic data")
     reasons += [f"a {law.kind} law" for law in laws
                 if not isinstance(law, (ConstantIndexDispersionV1, SellmeierDispersionV1, TabulatedDispersionV1))]
-    if any(isinstance(law, TabulatedDispersionV1) and law.measured for law in laws):
-        reasons.append("a measured index table")
+    for law in laws:
+        if isinstance(law, TabulatedDispersionV1) and law.origin in {"MEASURED", "SOURCE_TABLE"}:
+            reasons.append("a measured index table" if law.measured else "a source index table")
+            break
     if reasons:
         raise _problem(LocalRunErrorCode.MATERIALS_UNSUPPORTED,
                        f"material {material.material_id}: a {what} is modelled with constant, Sellmeier or tabulated laws on "
@@ -908,7 +911,7 @@ def engine_material(material: PublicMaterialV1 | ProjectModelMaterialV1, namespa
     """The Engine model of a material (a published one, or one the Project declares when ``namespace`` is
     ``project:``), valid on exactly its band (never extrapolated), with its bulk absorption when it states one: a constant
     index, a Sellmeier law (1 to 10 terms), a power series, a Herzberger or a temperature Sellmeier law, or a PCHIP table
-    (``origin = measured`` for a measured one), with the material's ``index_reference`` (how its law is written: the Engine
+    (carrying its measured or source-table origin), with the material's ``index_reference`` (how its law is written: the Engine
     evaluates it at the law's wavelength of each vacuum wavelength), ``bulk_loss`` (spectral) and ``thermo_optic``.
     ``temperature_c`` (the environment's) becomes the Engine material's temperature where the index depends on it (thermo
     data or a temperature law); otherwise the material is evaluated as its source states it."""
@@ -948,9 +951,10 @@ def engine_material(material: PublicMaterialV1 | ProjectModelMaterialV1, namespa
             pole_coefficients_um=tuple(tuple(_number(v) for v in row) for row in dispersion.pole_coefficients_um),
             temperature_k_range=(_number(dispersion.temperature_k_range[0]), _number(dispersion.temperature_k_range[1])),
             reference_temperature_k=_number(dispersion.reference_temperature_k), **common)
-    if getattr(dispersion, "measured", False):
+    if dispersion.measured:
         common["origin"] = "measured"
-    return TabulatedIndexMaterial(
+    table_type = SourceTableIndexMaterial if dispersion.origin == "SOURCE_TABLE" else TabulatedIndexMaterial
+    return table_type(
         wavelength_nm=tuple(_number(v) for v in dispersion.wavelength_nm),
         refractive_index=tuple(_number(v) for v in dispersion.refractive_index), interpolation="pchip", **common,
     )

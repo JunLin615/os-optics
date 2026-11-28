@@ -40,6 +40,10 @@ See the [microscope and two-mirror reference traces](../ZMX_IMPORT.md) and the [
 
 The same command accepts centered sequential `.len` files. The [`.len` reader guide](../LEN_IMPORT.md) lists supported records, glass lookup, and the three-wavelength comparison for a double Gauss design.
 
+### Reading `.seq`
+
+The same command accepts centered sequential `.seq` files. The [`.seq` reader guide](../SEQ_IMPORT.md) covers the supported command subset, private glass tables, and the catalog asphere's measured focal length and ray intercepts.
+
 ### Archive and session inputs
 
 A `.zda` stores analysis-window and display settings. Open the adjacent `.zmx` with the same stem. All 460 session files in the inspected sample directory had a matching prescription and the same eight-byte binary prefix.

@@ -16,10 +16,11 @@ from .errors import PrescriptionErrorCode as E, PrescriptionImportError, SourceL
 from .glass import CatalogSource, _Catalog
 from .illumination import illumination
 from .len_reader import read_len
+from .seq import read_seq
 from .zmx import read_zmx
 from .zmx_config import configuration_states
 
-_READERS = {".zmx": read_zmx, ".len": read_len}
+_READERS = {".zmx": read_zmx, ".seq": read_seq, ".len": read_len}
 
 
 def _text(path: Path) -> str:

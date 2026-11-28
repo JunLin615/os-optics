@@ -6,6 +6,7 @@
 *.gz binary
 # Reference prescriptions retain their original encoding and line endings.
 tests/fixtures/zmx/**/*.zmx -text
+tests/fixtures/seq/*.seq -text -whitespace
 uv.lock text eol=lf -diff linguist-generated=true
 package-lock.json text eol=lf -diff linguist-generated=true
 src/os_optics/viewer/assets/three.bundle.js text eol=lf -diff linguist-generated=true

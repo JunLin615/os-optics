@@ -131,6 +131,14 @@ class ConstantIndexDefinition:
     refractive_index: Decimal
 
 
+@dataclass(frozen=True)
+class TabulatedIndexDefinition:
+    """Source index samples in the wavelength and index convention of the material."""
+
+    wavelength_nm: tuple[Decimal, ...]
+    refractive_index: tuple[Decimal, ...]
+
+
 #: How a material definition states its law (``MaterialDefinition.index_reference``).
 LAW_VACUUM = "VACUUM"
 LAW_AIR = "AIR"
@@ -146,7 +154,7 @@ class MaterialDefinition:
     wavelengths -- the Project copy states it as ``IndexReferenceV1`` and its valid band in vacuum wavelengths)."""
 
     name: str
-    dispersion: SellmeierDefinition | ConstantIndexDefinition
+    dispersion: SellmeierDefinition | ConstantIndexDefinition | TabulatedIndexDefinition
     min_nm: Decimal
     max_nm: Decimal
     location: SourceLocation
@@ -390,6 +398,7 @@ __all__ = [
     "ObjectSpace",
     "Prescription",
     "SellmeierDefinition",
+    "TabulatedIndexDefinition",
     "power_to_mm",
     "reciprocal",
     "to_mm",

@@ -100,7 +100,7 @@
       "sha256": "c574fa7533affe98bb8e7570d32ca07eeff86256c182196573d96038cf849df5"
     },
     "shared_contracts/design_catalog/optical_catalog.py": {
-      "sha256": "f61627fcf29ac0b28a9db566fefc63ac20a3e0f0203be386d24fca64cc22f106"
+      "sha256": "21a2f83ad1e6482e2e5e4bcf27c42027a50edce3335f75e0111010fc385cf9fe"
     },
     "shared_contracts/optical_design/__init__.py": {
       "sha256": "d955a3350f217e15174cdd2a315d9aac529967aa6e539d7fe3b4a4626a9f4134"
