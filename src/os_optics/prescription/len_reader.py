@@ -262,6 +262,8 @@ def read_len(text: str, *, default_unit: str = "mm", requested_unit: str | None 
     field_type, fields, field_loc = _fields(system, header, unit, infinite)
     pupil = to_mm(system["EBR"].scalar(), unit) * 2 if "EBR" in system else None
     na = system["NAO"].scalar() if "NAO" in system else None
+    if pupil is not None and na is not None:
+        raise refuse(E.ROW_INVALID, "Give one system aperture, EBR or NAO.", system["NAO"].loc)
     if pupil is not None and (not infinite or pupil <= 0):
         raise refuse(E.UNSUPPORTED_FEATURE, "EBR requires a positive radius and an object at infinity", system["EBR"].loc)
     if na is not None and (infinite or not 0 < na < 1):
@@ -274,4 +276,5 @@ def read_len(text: str, *, default_unit: str = "mm", requested_unit: str | None 
         field_location=field_loc, wavelength_location=wave_loc, environment=environment,
         wavelengths_in=WAVELENGTHS_AIR, wavelengths_nm=wavelengths, wavelength_weights=weights,
         object_na=na, entrance_pupil_diameter_mm=pupil, field_type=field_type, fields=fields,
+        aperture_location=system["EBR"].loc if pupil is not None else system["NAO"].loc if na is not None else None,
     )

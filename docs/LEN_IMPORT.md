@@ -17,7 +17,7 @@ result = paraxial_analysis(project.payload(), {
 print(result["system"]["efl_mm"])  # 100.00393925 mm
 ```
 
-The file describes four glass elements, a separate central stop, a 12.5 mm entrance pupil diameter and an image plane 89.832 mm behind the last vertex. The Project carries the three spectral lines, editable Gaussian alignment probes at 0° and 14°, and a circular image detector of radius 25.172634 mm. Each probe samples a narrow beam. The field-edge checks below measure chief-ray position.
+The file describes four glass elements, a separate central stop, a 12.5 mm entrance pupil diameter and an image plane 89.832 mm behind the last vertex. The Project carries the three spectral lines, editable Gaussian alignment probes at 0° and 14°, and a circular image detector of radius 25.172634 mm. Each probe samples a narrow beam. `trace_system_pupil` uses the separately saved system aperture. The positive meridional rim of the axial `EBR 6.25` pupil launches a parallel ray at +6.25 mm. For finite objects `NAO` determines the launch cone by `n sin(u)` at the primary wavelength. Import checks the declared axial rim against the physical apertures and reports a conflict at the `EBR` or `NAO` command. The field-edge checks below measure chief-ray position.
 
 ## Supported records
 

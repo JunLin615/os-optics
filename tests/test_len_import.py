@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from os_optics.local import load_public_catalog, paraxial_analysis, run_optical_project
+from os_optics.local import load_public_catalog, paraxial_analysis, run_optical_project, trace_system_pupil
 from os_optics.prescription import PrescriptionImportError, read_prescription_project
 from os_optics.prescription.len_reader import read_len
 
@@ -36,6 +36,10 @@ def test_archive_project_traces_to_reference_foci_and_image_heights(tmp_path):
     saved = tmp_path / "double-gauss.project.json"
     saved.write_text(json.dumps(project.payload()), encoding="utf-8")
     document = json.loads(saved.read_text(encoding="utf-8"))
+    pupil = trace_system_pupil(document, source_id='SRC1', pupil_coordinates=[(0, 1)], wavelength_nm=587.720064)
+    ray, = pupil['rays']
+    assert ray['origin_mm'][1] == pytest.approx(6.25)
+    assert ray['observations']
     lenses = [c.instance_id for c in project.components if c.optical_role == "lens"]
     assert len(lenses) == 4 and sum(c.optical_role == "aperture" for c in project.components) == 1
     assert project.observations[0].pose.position_mm == (0, 0, 113.18)
@@ -99,6 +103,7 @@ def test_units_finite_conjugate_asphere_and_quotes():
     assert surface.aspheric_mm == (Decimal("0.0004"), 0, Decimal("1e-7"))
     with pytest.raises(PrescriptionImportError, match="requested units conflict"):
         read_len(text, requested_unit="mm")
+    assert (rx.aperture_location.row, rx.aperture_location.column) == (2, 'NAO')
 
 
 def test_unknown_historical_glass_names_fail_at_source():
