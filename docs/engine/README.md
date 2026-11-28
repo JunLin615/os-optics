@@ -148,7 +148,14 @@ os-optics catalog sync                     # first run (or let the first design 
 os-optics catalog status                   # active release, stored releases, last check
 os-optics catalog import catalog.json      # an offline computer: use a release file you copied
 os-optics catalog use 2026-09-30.3         # make a stored release the active one (no network)
+os-optics catalog mechanical list          # the mechanical catalog in effect (--kind, --holds-size MM, --mechanical FILE)
+os-optics catalog mechanical show OS-MECH-...   # one identity's facts
+os-optics catalog mechanical status        # which mechanical documents are in effect, and from where
 ```
+
+`catalog sync` also fetches the public mechanical catalog when the service offers it (verified by SHA-256; a service
+without it is not an error), and `catalog status | check | verify` report it in a `mechanical` block. See the
+[mechanical catalog](../en/mechanical-catalog.md) page.
 
 ## Quick start
 
@@ -2012,6 +2019,27 @@ breadboard in a part list is an ordinary line. The mounting sheet (`resolution m
 JSON with English and Simplified Chinese text; `--locale` prints it as text, `--out FILE` writes it) gives each
 optic's chain, the assembly order and threads, the beam-height arithmetic and the adjustment axes.
 
+#### Ordering a purchase BOM
+
+A purchase BOM lists OpenSci part numbers and quantities (`line_id` and `purpose` `PLAN | SPARE` are optional). The
+quote reviews every line:
+
+```bash
+os-optics order quote bom.json                              # review + quote (resolution_id when a line can be supplied)
+os-optics order quote bom.json --confirm bom.review.json    # confirm the changes the review lists
+os-optics order create RESOLUTION_ID
+```
+
+`order quote` exits 0 when every line can be supplied (`ORDERABLE`, with the next command), 1 when some lines cannot be
+supplied as listed (`CHANGES_REQUIRED`: it writes `bom.review.json`, or `--review-out FILE`, whose proposed
+confirmation keeps the other lines; `order create` on that quote is refused with `BOM_CHANGES_UNCONFIRMED` until the
+changes are confirmed), 65 for a BOM or confirmation refused locally (nothing is sent), 67 when the service refuses
+it (`BOM_NOT_ORDERABLE` when no line can be supplied: the review is written) and 77 without a token (the other codes:
+`order quote --help`). Without a token nothing is sent, the BOM stays in its file, and the output names the Account
+registration and sign-in pages, where to save the token and the same command to run again (it sends the same request,
+so it never creates a second quote). From Python: `client.quote_bom(document)` (`os_optics.client.purchase_bom_body`,
+`review_of`, `review_document`, `confirmation_body`).
+
 To withdraw an Order -- only when the person asks, and only before a transfer is reported:
 
 ```bash
@@ -2037,16 +2065,11 @@ os-optics order report-transfer ORDER_ID
 A report is not a confirmation: OpenSci confirms receipt of the payment. After that confirmation:
 
 ```bash
-os-optics assembly drawing RESOLUTION_ID --out drawing --locale zh-CN   # SVG, PDF, result and manifest, uploaded
-os-optics artifacts list RESOLUTION_ID
-os-optics artifacts download SET_ID DRAWING_PDF --out drawing.pdf     # roles as 'artifacts show' lists them
+os-optics assembly drawing RESOLUTION_ID --out drawing --locale zh-CN   # SVG, PDF, result and manifest (nothing is uploaded)
 ```
 
-The summary states the drawing (`status`, `delivery_ready`, `validation`, `files`, `out`) and the upload as its own
-outcome: `upload.status` is `UPLOADED` (with the stored `validation` and `drawing` artifact sets), `NOT_REQUESTED`
-(`--no-upload`) or `FAILED` (with `error`, the parts already stored in `uploaded` and the `retry` command as its
-arguments). The drawing files are written in every case; an upload that fails exits with its error's code (67 / 69 /
-77) after the summary is printed, and the retry stores nothing twice.
+The summary states the drawing (`status`, `delivery_ready`, `validation`, `files`, `out`). The drawing stays on this
+computer: nothing is uploaded.
 
 Before the confirmation `assembly drawing` exits with code 75 and a JSON error whose `recovery` is
 `WAIT_FOR_PAYMENT_CONFIRMATION` (or `CREATE_ORDER_FIRST` when there is no Order yet). The drawing is written in English
@@ -2091,14 +2114,14 @@ order = client.create_order(rid)["order"]
 client.report_bank_transfer(order["order_id"])
 # ... after OpenSci has confirmed the payment:
 drawing = client.assembly_drawing(rid, "drawing", preview=preview)
-client.upload_assembly_results(rid, drawing=drawing, preview=preview)
+# (drawings stay on this device; nothing is uploaded)
 ```
 
 A submission sends the run's Project and Local Validation record; it needs the run's `manifest.json`, `project.json`,
 `engine_request.json`, `simulation_result.json` and `local_validation.json`, which vouch for them. The optical scene, its
 GLB and the ray data may be absent; when present they are checked too.
 
-Repeating a call is safe: submissions, Orders, payment reports and uploads carry an idempotency key derived from their
+Repeating a call is safe: submissions, BOM quotes, Orders and payment reports carry an idempotency key derived from their
 input, so a repeat returns the first result (`replayed: true`). Every failure is an `OpenSciApiError` with `code`,
 `message`, `details`, `recovery` (what to do next), `http_status` and `request_id`.
 
