@@ -769,12 +769,116 @@ def test_later_review_whose_submitted_lines_come_from_another_bom_is_refused(env
         assert code == 65 and refused["error"]["code"] == "CONFIRMATION_BOM_MISMATCH", name
         assert refused["error"]["details"]["reason"] == "REVIEW_INCONSISTENT" and refused["error"]["details"]["round"] == 2
     assert len(stub.state.requests) == sent and a.read_bytes() == a_bytes
-    # the A-shaped submission is what A's own second confirmation would have been: it passes the binding (the service checks the
-    # quote it names)
-    passes = edit_review(b_second, tmp_path / "a-shaped.json", a_shaped)
-    from os_optics.client.bom_review import check_review_binding
 
-    check_review_binding(json.loads(a.read_text("utf-8")), json.loads(passes.read_text("utf-8")))
+
+def test_a_confirmation_that_is_not_the_named_bom_is_never_sent(env, capsys, stub, tmp_path):
+    """The body that is sent is the named BOM changed only by recorded decisions, in every round: B's round-2 review made
+    A-shaped (A's digest, submitted quantities of A) still carries B's service review and B's proposal, so confirming it
+    for A would send B's quantities; it is refused with nothing sent. Only a file whose recorded review, submitted body
+    and proposal are all A's passes, and then the body is A's lines with the recorded decisions applied."""
+
+    from os_optics.client.bom_review import check_confirmation_binding, check_review_binding, confirmation_body
+
+    a = write_bom(tmp_path / "a.json", THREE)
+    b, b_first = quoted_with_changes(capsys, stub, tmp_path / "b.json", [{**line, "quantity": 2} for line in THREE])
+    stub.state.bom_unavailable = {MOUNT}
+    assert cli(capsys, "order", "quote", str(b), "--confirm", str(b_first))[0] == 1
+    b_second = tmp_path / "b.review-2.json"
+    a_digest = bom_request_digest(json.loads(a.read_text("utf-8")))
+
+    def a_shaped(document):
+        document["bom_request_sha256"] = a_digest
+        for line in document["submitted"]["lines"]:
+            line["quantity"] = 1
+
+    def a_shaped_review_too(document):  # the recorded service review made A's as well; the proposal is still B's
+        a_shaped(document)
+        for line in document["bom_review"]["lines"]:
+            line["quantity"] = 1
+
+    stub.state.bom_unavailable = set()
+    inputs = {path: path.read_bytes() for path in (a, b, b_first, b_second)}
+    before = len(stub.state.requests)
+    for edit, code_expected in ((a_shaped, 65), (a_shaped_review_too, 65)):
+        forged = edit_review(b_second, tmp_path / f"{edit.__name__}.json", edit)
+        forged_bytes = forged.read_bytes()
+        code, refused = cli(capsys, "order", "quote", str(a), "--confirm", str(forged))
+        assert len(stub.state.requests) == before, edit.__name__
+        assert forged.read_bytes() == forged_bytes
+        if edit is a_shaped:
+            assert code == 65 and refused["error"]["code"] == "CONFIRMATION_BOM_MISMATCH", refused
+            assert refused["error"]["details"]["reason"] == "REVIEW_INCONSISTENT"
+        else:  # the proposal (B's quantities) no longer follows from the recorded review: the service's own rule
+            assert code == 65 and refused["error"]["code"] == "CONFIRMATION_INCONSISTENT", refused
+    assert {path: path.read_bytes() for path in inputs} == inputs
+
+    def all_of_a(document):
+        a_shaped_review_too(document)
+        for line in document["proposed_confirmation"]["lines"]:
+            line["quantity"] = 1
+
+    document = json.loads(edit_review(b_second, tmp_path / "all-of-a.json", all_of_a).read_text("utf-8"))
+    bom_a = json.loads(a.read_text("utf-8"))
+    check_review_binding(bom_a, document)
+    body = confirmation_body(document)
+    check_confirmation_binding(bom_a, document, body)
+    assert [(l["line_id"], l["quantity"]) for l in body["lines"]] == [("L1", 1)]
+
+
+def test_a_first_review_whose_recorded_review_was_edited_is_refused_before_sending(env, capsys, stub, tmp_path):
+    """The first review: an OK line's quantity changed in the recorded service review and in the proposal alike is a change no
+    decision records; it is refused with nothing sent (it used to be sent and refused by the service)."""
+
+    bom, first = quoted_with_changes(capsys, stub, tmp_path / "bom.json")
+
+    def quantity_50(document):
+        for part in ("bom_review", "proposed_confirmation"):
+            for line in document[part]["lines"]:
+                if line["line_id"] == "L1":
+                    line["quantity"] = 50
+
+    def reordered(document):
+        document["bom_review"]["lines"].reverse()
+
+    def dropped(document):
+        document["bom_review"]["lines"] = document["bom_review"]["lines"][1:]
+
+    inputs = {path: path.read_bytes() for path in (bom, first)}
+    before = len(stub.state.requests)
+    for edit in (quantity_50, reordered, dropped):
+        forged = edit_review(first, tmp_path / f"{edit.__name__}.json", edit)
+        code, refused = cli(capsys, "order", "quote", str(bom), "--confirm", str(forged))
+        assert code == 65 and refused["error"]["code"] == "CONFIRMATION_BOM_MISMATCH", (edit.__name__, refused)
+        assert refused["error"]["details"]["reason"] == "REVIEW_INCONSISTENT" and refused["error"]["details"]["round"] == 1
+    assert len(stub.state.requests) == before
+    assert {path: path.read_bytes() for path in inputs} == inputs
+    code, confirmed = cli(capsys, "order", "quote", str(bom), "--confirm", str(first))
+    assert code == 0 and confirmed["status"] == "ORDERABLE" and len(posts(stub)) == 2
+
+
+def test_check_confirmation_binding_replays_every_recorded_decision():
+    """The body checked last is the BOM with the decisions of every round applied, its own included."""
+
+    from os_optics.client import LocalInputError
+    from os_optics.client.bom_review import bom_request_digest as digest, check_confirmation_binding
+
+    bom = {"schema": SCHEMA, "schema_version": "2", "lines": THREE}
+    review = {"schema": "os-optics.bom_review", "round": 2, "bom_request_sha256": digest(bom), "resolution_id": "r2",
+              "earlier_decisions": [],
+              "submitted": {"lines": [{"line_id": "L1", "opensci_sku": OPTIC, "quantity": 1},
+                                      {"line_id": "L2", "opensci_sku": MOUNT, "quantity": 1}],
+                            "confirmed_changes": {"resolution_id": "r1",
+                                                  "decisions": [{"line_id": "L3", "decision": "REMOVED"}]}}}
+    good = {"lines": [{"line_id": "L1", "opensci_sku": OPTIC, "quantity": 1, "purpose": "PLAN"}],
+            "confirmed_changes": {"resolution_id": "r2", "decisions": [{"line_id": "L2", "decision": "REMOVED"}]}}
+    check_confirmation_binding(bom, review, good)
+    for bad in ({**good, "lines": [{"line_id": "L1", "opensci_sku": OPTIC, "quantity": 2}]},
+                {**good, "lines": [*good["lines"], {"line_id": "L3", "opensci_sku": POST, "quantity": 1}]},
+                {**good, "confirmed_changes": {"resolution_id": "r2", "decisions": []}},
+                {**good, "lines": [{"opensci_sku": OPTIC, "quantity": 1}]}):
+        with pytest.raises(LocalInputError) as refused:
+            check_confirmation_binding(bom, review, bad)
+        assert refused.value.code == "CONFIRMATION_BOM_MISMATCH" and refused.value.details["reason"] == "REVIEW_INCONSISTENT"
 
 
 def test_later_review_with_tampered_earlier_decisions_is_refused(env, capsys, stub, tmp_path):

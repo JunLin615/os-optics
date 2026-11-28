@@ -2040,7 +2040,11 @@ looked up or anything is sent:
 - a review whose `submitted` body is not that BOM: `CONFIRMATION_BOM_MISMATCH` with `details.reason`
   `REVIEW_INCONSISTENT`, exit 65. For the first review `submitted` is the BOM itself; for a later one it is the
   confirmation that was sent, and it must be the BOM's lines with the recorded decisions applied (the same line ids
-  in the BOM's order, every change a decision of `earlier_decisions` or of `submitted` itself);
+  in the BOM's order, every change a decision of `earlier_decisions` or of `submitted` itself); and in every round
+  the recorded `bom_review` must list exactly the `submitted` lines (the service reviews every submitted line, in
+  request order), and the confirmation that would be sent must be the BOM's lines with every recorded decision and
+  its own applied -- the same refusal otherwise, so the body sent is always the named BOM changed only by recorded
+  decisions;
 - the proposed confirmation is checked by the service's rule (`CONFIRMATION_INCONSISTENT`, exit 65). Editing its
   decisions and lines is how a person changes a quantity or substitutes a part number;
 - a `--review-out` that is the BOM or the `--confirm` file, under any spelling (relative or absolute, `./`, `..`, case,

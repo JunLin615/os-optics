@@ -48,8 +48,9 @@ Earlier releases are summarized in `src/os_optics/_version.py` and on
   `--confirm` with another BOM, a missing BOM or an unbound review is refused before anything is sent
   (`CONFIRMATION_BOM_MISMATCH`, `INPUT_FILE_UNREADABLE`, `CONFIRMATION_NOT_POSSIBLE`). A confirmation answered with
   new changes writes the next round (`BOM.review-2.json`), confirmed the same way; a later review's `submitted`
-  confirmation must be the BOM with the recorded decisions applied (`earlier_decisions`; `REVIEW_INCONSISTENT`
-  otherwise). `--review-out` never replaces an input file, directly or through its temporary name
+  confirmation must be the BOM with the recorded decisions applied (`earlier_decisions`), the recorded service review
+  must list exactly the submitted lines, and the confirmation sent must be the BOM with every recorded decision
+  applied, in every round (`REVIEW_INCONSISTENT` otherwise, nothing sent). `--review-out` never replaces an input file, directly or through its temporary name
   (`REVIEW_OUT_COLLISION`), and one that cannot be created is refused (`REVIEW_OUT_UNWRITABLE`), both before sending; a
   review that cannot be written after sending still prints the answer and its `resolution_id` (exit 73).
 - **Account handoff without a token:** the registration and sign-in URLs (`OPENSCI_ACCOUNT_URL`), the token location

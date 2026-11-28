@@ -961,8 +961,8 @@ def _order_quote(args: argparse.Namespace) -> int:
     from .client import LocalInputError, OpenSciApiError, OpenSciConfigurationError, Recovery
     from .client.bom_review import (CHANGES_REQUIRED, CONFIRMATION_BOM_MISMATCH, IS_DIRECTORY, ORDERABLE,
                                     PARENT_MISSING, PARENT_NOT_A_DIRECTORY, REVIEW_OUT_COLLISION, REVIEW_OUT_UNWRITABLE,
-                                    SAME_AS_BOM, SAME_AS_REVIEW, bom_request_digest, changed_lines, check_review_binding,
-                                    confirmation_body, next_earlier_decisions, purchase_bom_body, review_document,
+                                    SAME_AS_BOM, SAME_AS_REVIEW, bom_request_digest, changed_lines, check_confirmation_binding,
+                                    check_review_binding, confirmation_body, next_earlier_decisions, purchase_bom_body, review_document,
                                     review_of, review_out_problem, review_out_unwritable, review_round)
     from .client.credentials import resume_with
     from .client.errors import (BOM_CONFIRMATION_INVALID, BOM_NOT_ORDERABLE, RESOLUTION_NOT_FOUND, RETIREMENT_CODES,
@@ -984,12 +984,13 @@ def _order_quote(args: argparse.Namespace) -> int:
     if review_file is not None:
         try:
             check_review_binding(bom_document, review_file)
+            body = confirmation_body(review_file)
+            check_confirmation_binding(bom_document, review_file, body)
         except LocalInputError as exc:
             if exc.code == CONFIRMATION_BOM_MISMATCH:
                 exc.local_hint = (f"This review was written for another BOM: quote {args.bom} ({requote}) or name the BOM "
                                   "this review belongs to.")
             raise
-        body = confirmation_body(review_file)
         round_number = review_round(review_file) + 1
         request_digest = review_file["bom_request_sha256"]
         earlier = next_earlier_decisions(review_file)

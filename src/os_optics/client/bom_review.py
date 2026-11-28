@@ -40,8 +40,11 @@ A review file also names the purchase request it belongs to, so a confirmation i
 ``check_review_binding(BOM, REVIEW)`` refuses a review file of another BOM (``CONFIRMATION_BOM_MISMATCH``), one whose
 ``submitted`` body is not that BOM -- for the first review the BOM's normal form itself, for a later one the BOM's
 lines with the recorded decisions applied, line by line (same line ids, in the BOM's order; every change a recorded
-decision) -- (``details.reason`` ``REVIEW_INCONSISTENT``), and one without these fields (``CONFIRMATION_NOT_POSSIBLE``:
-quote the BOM again). ``review_out_problem`` refuses a review output path that is one of the command's input files, or
+decision) -- or whose recorded service review does not list exactly the submitted lines (the service reviews every
+submitted line, in request order) (``details.reason`` ``REVIEW_INCONSISTENT``), and one without these fields
+(``CONFIRMATION_NOT_POSSIBLE``: quote the BOM again). ``check_confirmation_binding(BOM, REVIEW, BODY)`` then refuses a
+confirmation body that is not the BOM's lines with every recorded decision and its own applied (the same code and
+reason), so the body that is sent is always the named BOM changed only by recorded decisions. ``review_out_problem`` refuses a review output path that is one of the command's input files, or
 whose temporary name (``.<name>.partial`` beside it, which the writer replaces) is one, whatever its spelling
 (``REVIEW_OUT_COLLISION``); ``review_out_unwritable`` refuses one that cannot be created: its directory is missing or is
 not a directory, or the temporary name cannot be created there (``REVIEW_OUT_UNWRITABLE``, probed by creating and
@@ -386,14 +389,36 @@ def _submitted_is_the_bom(bom_document: Mapping[str, Any], review_file: Mapping[
     return _replayed_lines(bom_document, [*earlier, own]) == [_line_key(line) for line in lines]
 
 
+def _review_is_of_submitted(review_file: Mapping[str, Any]) -> bool:
+    """Whether the review file's ``bom_review`` lists exactly the lines of its ``submitted`` body (normal form), in
+    order: the service reviews every submitted line in request order, with its id, part number, quantity and purpose."""
+
+    review, submitted = review_file.get("bom_review"), review_file.get("submitted")
+    if not isinstance(review, Mapping) or not isinstance(review.get("lines"), list) or not isinstance(submitted, Mapping):
+        return False
+    try:
+        expected = [_line_key(line) for line in bom_normal_form(submitted)["lines"]]
+    except LocalInputError:
+        return False
+    return [_line_key(line) if isinstance(line, Mapping) else None for line in review["lines"]] == expected
+
+
+def _inconsistent(message: str, digest: str, recorded: Any, round_number: int) -> LocalInputError:
+    return LocalInputError(CONFIRMATION_BOM_MISMATCH, message,
+                           details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded,
+                                    "reason": REVIEW_INCONSISTENT, "round": round_number},
+                           recovery=Recovery.FIX_REQUEST)
+
+
 def check_review_binding(bom_document: Mapping[str, Any], review_file: Any) -> None:
     """Refuse a review file that does not belong to the purchase request of ``bom_document`` (nothing is sent):
     ``CONFIRMATION_NOT_POSSIBLE`` for a file that is not a review file, one without ``bom_request_sha256`` / ``round``
     (written by an earlier os-optics) or without a stored quote (``resolution_id`` null); ``CONFIRMATION_BOM_MISMATCH``
     for a review of another BOM (``details.bom_request_sha256`` of this BOM, ``details.review_bom_request_sha256``), or
-    a review whose ``submitted`` body is not that BOM: the BOM itself for the first review, the BOM's lines changed by
-    the recorded decisions for a later one (``details.reason`` ``REVIEW_INCONSISTENT``). The BOM itself is checked
-    before (``purchase_bom_body``); the confirmation's own check is ``confirmation_body``."""
+    a review whose ``submitted`` body is not that BOM -- the BOM itself for the first review, the BOM's lines changed by
+    the recorded decisions for a later one -- or whose ``bom_review`` does not list exactly the ``submitted`` lines
+    (``details.reason`` ``REVIEW_INCONSISTENT``). The BOM itself is checked before (``purchase_bom_body``); the
+    confirmation's own checks are ``confirmation_body`` and then ``check_confirmation_binding``."""
 
     if not isinstance(review_file, Mapping) or review_file.get("schema") != REVIEW_SCHEMA:
         raise _not_possible(f"the file is not a review file ({REVIEW_SCHEMA}) written by 'os-optics order quote'")
@@ -412,12 +437,31 @@ def check_review_binding(bom_document: Mapping[str, Any], review_file: Any) -> N
                               "nothing was sent", details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded},
                               recovery=Recovery.FIX_REQUEST)
     if not _submitted_is_the_bom(bom_document, review_file, round_number):
-        raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file's submitted body is not the BOM it names "
-                              + ("" if round_number == FIRST_ROUND else "with the recorded decisions applied ")
-                              + "(the file was edited); nothing was sent",
-                              details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded,
-                                       "reason": REVIEW_INCONSISTENT, "round": round_number},
-                              recovery=Recovery.FIX_REQUEST)
+        raise _inconsistent("the review file's submitted body is not the BOM it names "
+                            + ("" if round_number == FIRST_ROUND else "with the recorded decisions applied ")
+                            + "(the file was edited); nothing was sent", digest, recorded, round_number)
+    if not _review_is_of_submitted(review_file):
+        raise _inconsistent("the review file's bom_review does not list the lines of its submitted body (the file was "
+                            "edited); nothing was sent", digest, recorded, round_number)
+
+
+def check_confirmation_binding(bom_document: Mapping[str, Any], review_file: Mapping[str, Any],
+                               body: Mapping[str, Any]) -> None:
+    """Refuse a confirmation ``body`` (``confirmation_body`` of ``review_file``, which ``check_review_binding`` accepted
+    for ``bom_document``) that is not the BOM's lines (normal form) with every recorded decision applied -- those of
+    ``earlier_decisions``, of the ``submitted`` confirmation after the first review, and the body's own -- line by line
+    (``CONFIRMATION_BOM_MISMATCH``, ``details.reason`` ``REVIEW_INCONSISTENT``; nothing is sent)."""
+
+    round_number = review_round(review_file)
+    recorded = review_file.get("bom_request_sha256")
+    rounds = [] if round_number == FIRST_ROUND else [*review_file.get("earlier_decisions", []),
+                                                     _decisions_of(review_file.get("submitted"))]
+    lines = body.get("lines") if isinstance(body.get("lines"), list) else []
+    sent = [_line_key(line) if isinstance(line, Mapping) and "line_id" in line else None for line in lines]
+    expected = _replayed_lines(bom_document, [*rounds, _decisions_of(body)])
+    if expected is None or None in sent or sent != expected:
+        raise _inconsistent("the confirmation is not the BOM it names with the recorded decisions applied (the review "
+                            "file was edited); nothing was sent", bom_request_digest(bom_document), recorded, round_number)
 
 
 def _same_file(path: Path, other: str | Path) -> bool:
@@ -519,6 +563,7 @@ __all__ = [
     "bom_normal_form",
     "bom_request_digest",
     "changed_lines",
+    "check_confirmation_binding",
     "check_review_binding",
     "confirmation_body",
     "confirmation_problems",
