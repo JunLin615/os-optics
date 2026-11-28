@@ -60,7 +60,8 @@ derived mechanics in ``resolve-parts``, ``assembly preview`` / ``drawing``, ``vi
 layout``, ``resolution|order mounting-sheet``, ``artifacts``, and ``order create`` of a design resolution. Their refusal
 (``ORDERING_BASIS_RETIRED`` / ``ROUTE_RETIRED`` with 410, ``ORDER_OPTION_RETIRED`` with 422) has the recovery
 ``USE_LOCAL_PLAN`` and a hint naming the local command that replaces the command (exit 67); without a token these commands
-are sent anonymously, as the service answers a retired route before it authenticates. Without a token any other command
+are sent anonymously, as the service answers a retired route before it authenticates (``resolve`` then sends an empty
+probe, never the design). Without a token any other command
 prints its refusal ``TOKEN_MISSING`` with ``details.handoff`` (the Account registration / sign-in URLs, the token file, the
 command to resume with) and the same as text on stderr.
 """

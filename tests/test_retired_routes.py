@@ -104,6 +104,30 @@ def test_without_a_token_an_earlier_service_leads_to_the_handoff(env, stub, caps
     assert all("Authorization" not in r["headers"] for r in stub.state.requests)
 
 
+@pytest.mark.parametrize("retired", [True, False], ids=["bom-only-service", "earlier-service"])
+def test_resolve_without_a_token_never_sends_the_design(env, stub, capsys, tmp_path, monkeypatch, retired):
+    built = []
+
+    def design(run, **kw):
+        built.append(run)
+        return {"schema": "opensci.commercial_submission", "project": "MY-PRIVATE-DESIGN"}
+
+    monkeypatch.setattr(client_api, "submission_document", design)
+    stub.state.retired = retired
+    code = main(["resolve", str(tmp_path)])
+    captured = capsys.readouterr()
+    error = json.loads(captured.out)["error"]
+    sent = stub.state.requests
+    assert [(r["method"], r["path"]) for r in sent] == [("POST", "/api/v1/commercial-submissions")]
+    assert json.loads(sent[0]["body"]) == {} and "Authorization" not in sent[0]["headers"]
+    assert not built and all(b"MY-PRIVATE-DESIGN" not in (r["body"] or b"") for r in sent)
+    if retired:  # the retirement still reaches the user
+        assert code == 67 and error["code"] == "ORDERING_BASIS_RETIRED" and error["recovery"] == "USE_LOCAL_PLAN"
+    else:  # the earlier service wants a token: the handoff, and its "Nothing was sent" holds for the design
+        assert code == 77 and error["code"] == "TOKEN_MISSING" and "handoff" in error["details"]
+        assert captured.err.startswith("No OpenSci Account token on this device. Nothing was sent.")
+
+
 def test_retirement_is_mapped_by_code_whatever_the_status():
     for status, code in ((410, "ROUTE_RETIRED"), (410, "ORDERING_BASIS_RETIRED"), (422, "ORDER_OPTION_RETIRED"),
                          (422, "ROUTE_RETIRED")):

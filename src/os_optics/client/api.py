@@ -29,6 +29,7 @@ from .credentials import AccountToken, resolve_token
 from .errors import (
     API_URL_MISSING,
     ARTIFACT_DOWNLOAD_MISMATCH,
+    RETIREMENT_CODES,
     RUN_DIRECTORY_INCONSISTENT,
     TOKEN_MISSING,
     ArtifactIntegrityError,
@@ -356,7 +357,7 @@ class OpenSciClient:
     ``anonymous=True`` (the commands of routes the service has retired): without a token the client still sends its
     requests, unauthenticated, because the service answers a retired route (``410``) before it authenticates; an
     earlier service that answers ``401`` instead is reported as ``TOKEN_MISSING`` with its handoff
-    (``anonymous_refusal``). ``token`` is then None."""
+    (``anonymous_refusal``). ``token`` is then None. ``submit`` never sends the design anonymously (an empty probe)."""
 
     def __init__(self, api_url: str, token: Any = None, *, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  retries: int = DEFAULT_RETRIES, allow_insecure_http: bool = False,
@@ -543,8 +544,20 @@ class OpenSciClient:
         so submitting the same run again returns the same resolution (``replayed: true``); after OpenSci changed its
         catalog, prices or supply since, the same call returns a new resolution on the current basis (the step after
         ``RESOLUTION_NO_LONGER_AVAILABLE``). Returns the resolution document: ``resolution_id`` and the Customer
-        Purchase BOM with prices."""
+        Purchase BOM with prices.
 
+        An anonymous client (``resolve`` without a token) never sends the design: it sends an empty probe, so the
+        BOM-only service's retirement (``ORDERING_BASIS_RETIRED``) still reaches the user, and otherwise refuses
+        ``TOKEN_MISSING`` (with its handoff)."""
+
+        if self._token is None:
+            try:
+                self._post("/commercial-submissions", {})
+            except OpenSciApiError as exc:
+                if exc.code in RETIREMENT_CODES or exc.http_status is None:
+                    raise
+            assert self._missing is not None
+            raise self._missing
         document = submission_document(run, customer_constraints=customer_constraints)
         key = idempotency_key or idempotency_key_for("submit", canonical_json_bytes(document))
         return self._post("/commercial-submissions", document, key=key).json()
