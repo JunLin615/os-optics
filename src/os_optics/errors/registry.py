@@ -154,6 +154,10 @@ EXCEPTIONS: tuple[Raised, ...] = (
     Raised("os_optics.assembly.mesh:MeshError", "assembly mesh", A, MESH),
     Raised("os_optics.assembly_plan.mechanical.model:MechanicalCatalogError", "mechanical catalog", A, MECHANICAL),
     Raised("os_optics.assembly_plan.contract:AssemblyPlanError", "assembly plan", A, PLAN),
+    Raised("os_optics.assembly_plan.kernel.models:AssemblyResolutionRefusal", "assembly plan", A),  # derive: plan findings
+    Raised("os_optics.assembly_plan.kernel.resolve:_ChainFailure", "assembly plan", X),  # the search tries the next mount
+    Raised("os_optics.assembly_plan.kernel.resolve:_BudgetExhausted", "assembly plan", X),  # becomes a budget refusal
+    Raised("os_optics.assembly_plan.kernel.resolve:_ShareSpent", "assembly plan", X),  # a search pass ends its budget share
     Raised("os_optics.optical_view.builder:OpticalViewBindingError", "optical view", A),
     Raised("os_optics.optical_view.glb:GlbFormatError", "optical view", A),
     Raised("os_optics.optical_view.section:SectionError", "optical view", A),
