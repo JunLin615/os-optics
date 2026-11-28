@@ -207,7 +207,7 @@ def review_document(submitted: Mapping[str, Any], review: Mapping[str, Any], res
     """The review file (module docstring): with ``resolution_id`` (a persisted CHANGES_REQUIRED quote) a proposed
     confirmation that keeps every OK line and removes every changed one; without it (no line could be supplied) none.
     ``submitted`` is the body that was sent; ``bom_request_sha256`` the request the review belongs to (default: the
-    digest of ``submitted``, which is right for round 1 only); ``round_number`` its ``round``."""
+    digest of ``submitted``, which is right for the first review only); ``round_number`` its ``round``."""
 
     if not isinstance(round_number, int) or isinstance(round_number, bool) or round_number < FIRST_ROUND:
         raise ValueError("round_number is a whole number of at least 1")

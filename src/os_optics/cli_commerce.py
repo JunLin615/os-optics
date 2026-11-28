@@ -290,7 +290,7 @@ QUOTE_DESCRIPTION = (
     "its changes are confirmed). --confirm needs the BOM the review was written for: the review file records that BOM "
     "(bom_request_sha256), and a review of another BOM, a missing BOM or a review file of an earlier os-optics is "
     "refused before anything is sent (CONFIRMATION_BOM_MISMATCH, INPUT_FILE_UNREADABLE, CONFIRMATION_NOT_POSSIBLE). If "
-    "supply changed again, the confirmation is answered with a new review (round 2: BOM.review-2.json, and so on), "
+    "supply changed again, the confirmation is answered with a new review (the second one is BOM.review-2.json, and so on), "
     "confirmed the same way with the same BOM. No line suppliable: BOM_NOT_ORDERABLE, the review file is written, nothing "
     "is stored. The confirmation is checked here first (CONFIRMATION_INCONSISTENT, nothing sent). The review file is "
     "never written over the BOM or the --confirm file (REVIEW_OUT_COLLISION, nothing sent). Without a token nothing is "
@@ -924,7 +924,7 @@ def _quote_argv(bom: str, *, schema_version: str, confirm: str | None = None, re
 
 
 def _review_path(bom: Path, round_number: int) -> Path:
-    """The default review file of round ``round_number``: ``BOM.review.json`` (round 1), ``BOM.review-<n>.json``."""
+    """The default file of review ``round_number``: ``BOM.review.json`` for the first, ``BOM.review-<n>.json`` after."""
 
     return bom.with_name(bom.stem + (REVIEW_SUFFIX if round_number == 1 else f".review-{round_number}.json"))
 
