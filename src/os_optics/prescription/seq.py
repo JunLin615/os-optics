@@ -8,8 +8,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 
+from .._vendor.shared_contracts.design_catalog.material_physics import AIR_MODEL_BAND_NM, STANDARD_PRESSURE_PA, STANDARD_TEMPERATURE_C
 from . import ir
-from .csv_table import MATERIAL_ID_PATTERN, NUMBER_MAX, NUMBER_MIN, NUMBER_PATTERN
+from .csv_table import MATERIAL_ID_MAX, MATERIAL_ID_PATTERN, NUMBER_MAX, NUMBER_MIN, NUMBER_PATTERN
 from .errors import ImportWarning, PrescriptionErrorCode as E, SourceLocation, refuse
 
 FORMAT_ID = ".seq"
@@ -164,11 +165,11 @@ def _private_materials(commands: list[_Command]) -> tuple[ir.MaterialDefinition,
     if not commands or commands[0].key != 'PWL':
         raise refuse(E.FIELD_MISSING, 'PRV needs PWL followed by named index rows', commands[0].location if commands else None)
     wavelengths = commands[0].numbers()
-    if len(wavelengths) < 2 or min(wavelengths) < 180 or max(wavelengths) > 100000 or len(set(wavelengths)) != len(wavelengths):
+    if len(wavelengths) < 2 or min(wavelengths) < AIR_MODEL_BAND_NM[0] or max(wavelengths) > AIR_MODEL_BAND_NM[1] or len(set(wavelengths)) != len(wavelengths):
         raise refuse(E.MATERIAL_INVALID, 'PWL needs distinct wavelengths in the air model range 180..100000 nm', commands[0].location)
     materials = {}
     for row in commands[1:]:
-        if not MATERIAL_ID_PATTERN.fullmatch(row.key) or len(row.key) > 64 or row.key in materials or row.key == 'PWL':
+        if not MATERIAL_ID_PATTERN.fullmatch(row.key) or len(row.key) > MATERIAL_ID_MAX or row.key in materials or row.key == 'PWL':
             raise refuse(E.MATERIAL_INVALID, 'Private glass needs a unique material name of up to 64 characters', row.location)
         if not row.args or not NUMBER_PATTERN.fullmatch(row.args[0]):
             raise row.unsupported('only tabulated index rows are supported in PRV')
@@ -307,13 +308,13 @@ def read_seq(text: str, *, default_unit: str = 'mm', requested_unit: str | None 
         raise refuse(E.ROW_INVALID, 'Give one pupil specification', pupils[-1].location)
     if pupils and (pupils[0].scalar() <= 0 or (pupils[0].key == 'NAO' and pupils[0].scalar() >= 1)):
         raise refuse(E.VALUE_INVALID, 'Expected positive pupil size or an object NA between zero and one', pupils[0].location)
-    temperature = settings['TEM'].scalar() if 'TEM' in settings else Decimal(20)
-    if temperature != 20:
+    temperature = settings['TEM'].scalar() if 'TEM' in settings else STANDARD_TEMPERATURE_C
+    if temperature != STANDARD_TEMPERATURE_C:
         raise settings['TEM'].unsupported('only the standard 20 C material reference is supported')
     wavelengths = settings['WL'].numbers() if 'WL' in settings else ()
-    if wavelengths and (min(wavelengths) < 180 or max(wavelengths) > 100000 or len(set(wavelengths)) != len(wavelengths)):
+    if wavelengths and (min(wavelengths) < AIR_MODEL_BAND_NM[0] or max(wavelengths) > AIR_MODEL_BAND_NM[1] or len(set(wavelengths)) != len(wavelengths)):
         raise refuse(E.VALUE_INVALID, 'WL wavelengths must be distinct and within 180..100000 nm', settings['WL'].location)
-    vacuum = tuple(ir.air_to_vacuum_nm(w, temperature, Decimal(101325)).quantize(ir.VACUUM_WAVELENGTH_QUANTUM_NM) for w in wavelengths)
+    vacuum = tuple(ir.air_to_vacuum_nm(w, temperature, STANDARD_PRESSURE_PA).quantize(ir.VACUUM_WAVELENGTH_QUANTUM_NM) for w in wavelengths)
     weights = settings['WTW'].numbers() if 'WTW' in settings else (Decimal(1),) * len(vacuum)
     if 'WTW' in settings and (len(weights) != len(vacuum) or min(weights) < 0 or max(weights) == 0):
         raise refuse(E.VALUE_INVALID, 'WTW needs one nonnegative weight per wavelength and a positive total', settings['WTW'].location)
@@ -329,7 +330,7 @@ def read_seq(text: str, *, default_unit: str = 'mm', requested_unit: str | None 
         name=settings['TITLE'].args[0] if 'TITLE' in settings else None, object=ir.ObjectSpace(obj.location, distance, infinite),
         image=image.location, materials=materials, wavelengths_nm=vacuum, wavelength_weights=weights, primary_wavelength_index=primary,
         wavelengths_in=ir.WAVELENGTHS_AIR,
-        environment=ir.ReferenceEnvironment(temperature, Decimal(101325), ('temperature_c',) if 'TEM' in settings else ()),
+        environment=ir.ReferenceEnvironment(temperature, STANDARD_PRESSURE_PA, ('temperature_c',) if 'TEM' in settings else ()),
         fields=fields, field_type=field_type, field_location=axis_commands[-1].location if axis_commands else None,
         wavelength_location=settings['WL'].location if wavelengths else None, warnings=tuple(warnings),
         object_na=settings['NAO'].scalar() if 'NAO' in settings else None,
