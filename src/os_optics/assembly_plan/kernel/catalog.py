@@ -127,6 +127,9 @@ class KMount(KMember):
     envelope: BoxV1  # in the mount frame
     mechanisms: tuple[MountMechanismV1, ...] = ()
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mount_kind", MountKindV1(self.mount_kind))  # (the kernel compares kinds by identity)
+
 
 @dataclass(frozen=True, kw_only=True)
 class KBoard(KMember):
@@ -168,6 +171,7 @@ class OpticMechanicsV1:
     curved: bool = False
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "shape", OpticShapeV1(self.shape))  # (the kernel compares shapes by identity)
         if not self.axial_max_mm > self.axial_min_mm:
             raise ValueError("axial extent must be positive")
         if not (self.size_mm > 0 and self.thickness_mm > 0):
