@@ -335,6 +335,7 @@ def read_seq(text: str, *, default_unit: str = 'mm', requested_unit: str | None 
         environment=ir.ReferenceEnvironment(temperature, STANDARD_PRESSURE_PA, ('temperature_c',) if 'TEM' in settings else ()),
         fields=fields, field_type=field_type, field_location=axis_commands[-1].location if axis_commands else None,
         wavelength_location=settings['WL'].location if wavelengths else None, warnings=tuple(warnings),
+        aperture_location=pupils[0].location if pupils else None,
         object_na=settings['NAO'].scalar() if 'NAO' in settings else None,
         image_f_number=settings['FNO'].scalar() if 'FNO' in settings else None,
         entrance_pupil_diameter_mm=ir.to_mm(settings['EPD'].scalar(), unit) if 'EPD' in settings else None,

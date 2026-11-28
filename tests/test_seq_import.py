@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from os_optics._vendor.shared_contracts.design_catalog.optical_catalog import PublicMaterialV1, TabulatedDispersionV1
 from os_optics.config import DEFAULT_NUMERICAL_CONFIG
-from os_optics.local import load_project
+from os_optics.local import load_project, trace_system_pupil
 from os_optics.local.lowering import lower_project
 from os_optics.local.paraxial import paraxial_analysis
 from os_optics.optics.materials.group import group_dispersion
@@ -151,6 +151,21 @@ def test_default_air_import_and_named_private_glass(tmp_path):
     project = read_prescription_project(path)
     assert [m.material_id for m in project.model_materials] == ['GLASS_A']
     assert project.components[0].source_model.wavelength_nm == pytest.approx(550.150198, abs=0.001)
+
+
+@pytest.mark.parametrize('finite', [False, True])
+def test_nominal_fno_uses_the_same_entrance_diameter_at_both_conjugates(tmp_path, finite):
+    text = ASPHERE.read_text(encoding='utf-8').replace('EPD   12.0', 'FNO 4')
+    if finite:
+        text = text.replace('SO    0.0 0.1e14', 'SO 0 100')
+    path = tmp_path / 'stopped-down.seq'
+    path.write_text(text, encoding='utf-8')
+    project = read_prescription_project(path)
+    result = trace_system_pupil(project, source_id='SRC1', pupil_coordinates=[(0, 1)], wavelength_nm=587.721865)
+    assert result['entrance_pupil_diameter_mm'] == pytest.approx(15.85633336 / 4, abs=1e-6)
+    ray, = result['rays']
+    assert ray['observations']
+    assert (ray['direction'][1] > 0) == finite
 
 
 def test_private_catalog_rejects_wrong_count_and_unclosed_continuation():
