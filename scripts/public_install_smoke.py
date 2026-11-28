@@ -342,7 +342,7 @@ def protected(smoke: Smoke, require: bool, deliveries: Path | None) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--expect-version", default="0.14.0", help="the version that must be installed (default 0.14.0)")
+    parser.add_argument("--expect-version", default="0.15.0", help="the version that must be installed (default %(default)s)")
     parser.add_argument("--catalog", type=Path, help="import this public optical catalog release file (offline) instead of "
                                                      "synchronizing from the catalog service")
     parser.add_argument("--protected", action="store_true", help="require the [protected] extra")
