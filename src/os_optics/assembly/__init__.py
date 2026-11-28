@@ -2,7 +2,8 @@
 
 After a commercial submission, OpenSci resolves the assembly and sends this device its Assembly Preview Package
 (``manifest.json``, ``scene.json``, ``geometry/<part_ref>.glb``: OpenSci product identities, poses, support tree, mates,
-breadboard and part geometry). This module checks that assembly on the device::
+breadboard and part geometry); a local assembly plan generates the same package on the device itself
+(``os_optics.assembly_plan``, binding LOCAL_PLAN). This module checks that assembly on the device::
 
     from os_optics.assembly import load_assembly_preview, validate_assembly_layout
 
@@ -46,6 +47,7 @@ from .._vendor.shared_contracts.assembly_preview import (
     AssemblyPreviewSceneV1,
     CheckerTolerancesV1,
     InterferenceV1,
+    binding_pin_problems,
     json_file_bytes,
     load_assembly_preview_package,
     read_package_archive,
@@ -80,30 +82,29 @@ def package_files(source: PackageSource) -> dict[str, bytes]:
 
 def load_assembly_preview(source: PackageSource, *, expected_project_hash: str | None = None,
                           expected_resolution_hash: str | None = None,
-                          expected_content_hash: str | None = None) -> AssemblyPreviewPackageV1:
+                          expected_content_hash: str | None = None,
+                          expected_plan_digest: str | None = None) -> AssemblyPreviewPackageV1:
     """Read and VERIFY an Assembly Preview Package with the canonical contract verifier.
 
     Verifies the file set, sizes and SHA-256 digests against the manifest, the manifest's content hash, both JSON
     documents against their schemas and canonical bytes, scene <-> manifest cross references, and every part GLB.
-    ``expected_*`` optionally pins the package to a Project hash, a resolution hash or a content hash. Raises
+    ``expected_*`` optionally pins the package to a Project hash, a resolution hash, a content hash or -- a package
+    generated on this device from a local assembly plan (LOCAL_PLAN binding) -- a plan digest. Raises
     ``AssemblyPreviewPackageError`` listing every problem.
 
     A verified ``AssemblyPreviewPackageV1`` is returned unchanged after its manifest is compared with ``expected_*``.
     """
 
     if isinstance(source, AssemblyPreviewPackageV1):
-        binding = source.manifest.binding
-        problems = [f"{label} {got} is not the expected {want}" for label, got, want in (
-            ("project hash", binding.project.project_hash.digest, expected_project_hash),
-            ("resolution hash", binding.resolution.resolution_hash.digest, expected_resolution_hash),
-            ("package content hash", source.manifest.package_content_hash, expected_content_hash),
-        ) if want is not None and got != want]
+        problems = binding_pin_problems(source.manifest, expected_project_hash=expected_project_hash,
+                                        expected_resolution_hash=expected_resolution_hash,
+                                        expected_content_hash=expected_content_hash, expected_plan_digest=expected_plan_digest)
         if problems:
             raise AssemblyPreviewPackageError(tuple(problems))
         return source
     return load_assembly_preview_package(package_files(source), expected_project_hash=expected_project_hash,
                                          expected_resolution_hash=expected_resolution_hash,
-                                         expected_content_hash=expected_content_hash)
+                                         expected_content_hash=expected_content_hash, expected_plan_digest=expected_plan_digest)
 
 
 def validate_assembly_layout(package: PackageSource, *, tolerances: CheckerTolerancesV1 | None = None) -> AssemblyLocalValidationV1:

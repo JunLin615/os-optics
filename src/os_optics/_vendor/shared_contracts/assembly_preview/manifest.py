@@ -11,6 +11,14 @@ The manifest (``manifest.json``) is the package's single identity record:
 * ``package_content_hash`` is the osc1 digest of the manifest payload without that field, so it covers
   the binding, the revision, the usage terms and every file digest.
 
+Schema 3.1 adds a second binding basis: ``binding.basis = LOCAL_PLAN``, a package the user's own runtime generated on
+the user's device from a local assembly plan and public catalog data. It names the plan revision it was generated from
+(``LocalPlanRefV1``: plan id, revision, the plan digest and the digest of the plan's design BOM, whose line ids the
+scene's ``commercial_line_ref`` values are) instead of a resolution, a commercial submission, a Customer Purchase BOM
+or an Order, and it carries the local terms of use (``LocalUsageTermsV1``: viewing, checking and drawing; the user may
+pass it on). A manifest states 3.0 exactly for the commercial binding and 3.1 exactly for the local one, so every 3.0
+package keeps its bytes and its hash.
+
 The package is plain bytes addressed by relative paths. The protected delivery (``protected_assembly_delivery``)
 wraps the archive bytes in an encrypted envelope bound to one Project and resolution; the inner
 ``package_content_hash`` stays the package identity.
@@ -31,9 +39,22 @@ from ..optical_design.local_validation import ValidatedProjectRefV1
 
 ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_ID: Literal["opensci.assembly_preview.manifest"] = "opensci.assembly_preview.manifest"
 ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION: Literal["3.0"] = "3.0"
+#: 3.1: the LOCAL_PLAN binding basis and its usage terms (``LocalPlanRefV1``, ``LocalUsageTermsV1``).
+ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION_3_1: Literal["3.1"] = "3.1"
+ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSIONS: tuple[str, ...] = (ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION,
+                                                              ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION_3_1)
 PREVIEW_USAGE_STATEMENT: Literal[
     "Assembly data of this Project's resolved assembly, for viewing and checking the assembly. Not for redistribution."
 ] = "Assembly data of this Project's resolved assembly, for viewing and checking the assembly. Not for redistribution."
+LOCAL_PREVIEW_USAGE_STATEMENT: Literal[
+    "Assembly data generated on this device from your own assembly plan and public catalog data, for viewing, checking "
+    "and drawing the assembly."
+] = (
+    "Assembly data generated on this device from your own assembly plan and public catalog data, for viewing, checking "
+    "and drawing the assembly."
+)
+#: The binding basis of a package generated on the user's device from a local assembly plan (schema 3.1).
+LOCAL_PLAN_BASIS: Literal["LOCAL_PLAN"] = "LOCAL_PLAN"
 
 MANIFEST_PATH = "manifest.json"
 SCENE_PATH = "scene.json"
@@ -45,6 +66,8 @@ RESOLUTION_HASH_SUBJECT = "assembly_resolution"
 LOCAL_VALIDATION_HASH_SUBJECT = "local_validation_record"
 COMMERCIAL_SUBMISSION_HASH_SUBJECT = "commercial_submission"
 COMMERCIAL_BOM_HASH_SUBJECT = "customer_purchase_bom"
+PLAN_REVISION_HASH_SUBJECT = "assembly_plan_revision"
+DESIGN_BOM_HASH_SUBJECT = "design_bom"
 
 PackagePath = Annotated[
     str,
@@ -62,6 +85,8 @@ class PermittedUseV1(StrEnum):
 
 
 PREVIEW_PERMITTED_USES: tuple[PermittedUseV1, ...] = (PermittedUseV1.VIEW_ASSEMBLY, PermittedUseV1.VALIDATE_ASSEMBLY)
+LOCAL_PREVIEW_PERMITTED_USES: tuple[PermittedUseV1, ...] = (PermittedUseV1.VIEW_ASSEMBLY, PermittedUseV1.VALIDATE_ASSEMBLY,
+                                                            PermittedUseV1.GENERATE_ASSEMBLY_DRAWING)
 
 
 class UsageTermsV1(StrictContractModel):
@@ -78,6 +103,26 @@ class UsageTermsV1(StrictContractModel):
     def _complete(self) -> UsageTermsV1:
         if self.permitted_uses != PREVIEW_PERMITTED_USES:
             raise ValueError("permitted_uses of an assembly preview package are exactly (VIEW_ASSEMBLY, VALIDATE_ASSEMBLY)")
+        return self
+
+
+class LocalUsageTermsV1(StrictContractModel):
+    """Terms of use of a package generated on the user's device from the user's own assembly plan (schema 3.1): viewing,
+    checking and drawing this plan's assembly; the user may pass the package on."""
+
+    scope: Literal["THIS_PLAN"] = "THIS_PLAN"
+    permitted_uses: tuple[PermittedUseV1, ...] = LOCAL_PREVIEW_PERMITTED_USES
+    redistribution: Literal["PERMITTED"] = "PERMITTED"
+    statement: Literal[
+        "Assembly data generated on this device from your own assembly plan and public catalog data, for viewing, checking "
+        "and drawing the assembly."
+    ] = LOCAL_PREVIEW_USAGE_STATEMENT
+
+    @model_validator(mode="after")
+    def _complete(self) -> LocalUsageTermsV1:
+        if self.permitted_uses != LOCAL_PREVIEW_PERMITTED_USES:
+            raise ValueError("permitted_uses of a locally generated assembly preview package are exactly (VIEW_ASSEMBLY, "
+                             "VALIDATE_ASSEMBLY, GENERATE_ASSEMBLY_DRAWING)")
         return self
 
 
@@ -112,15 +157,56 @@ class CommercialBomRefV1(StrictContractModel):
         return _osc1_subject(value, COMMERCIAL_BOM_HASH_SUBJECT, "bom_hash")  # type: ignore[return-value]
 
 
+class DesignBomRefV1(StrictContractModel):
+    """The design BOM of a local assembly plan revision (every placed or anchored item, by line), by its hash: under a
+    LOCAL_PLAN binding the scene's ``commercial_line_ref`` values are its line ids."""
+
+    bom_hash: HashRef
+
+    @field_validator("bom_hash")
+    @classmethod
+    def _hash(cls, value: HashRef) -> HashRef:
+        return _osc1_subject(value, DESIGN_BOM_HASH_SUBJECT, "bom_hash")  # type: ignore[return-value]
+
+
+PlanIdText = Annotated[
+    str,
+    StringConstraints(strict=True, pattern=r"^[a-z0-9][a-z0-9-]{2,63}$"),
+    Field(description="Id of a local assembly plan: 3 to 64 lowercase letters, digits or '-'."),
+]
+
+
+class LocalPlanRefV1(StrictContractModel):
+    """The local assembly plan revision a package (or its detail and drawing) was generated from: plan id, revision
+    number, the plan digest (osc1 digest of the revision's decisions) and the plan's design BOM."""
+
+    plan_id: PlanIdText
+    revision: int = Field(strict=True, ge=1)
+    plan_digest: HashRef
+    design_bom: DesignBomRefV1
+
+    @field_validator("plan_digest")
+    @classmethod
+    def _plan(cls, value: HashRef) -> HashRef:
+        return _osc1_subject(value, PLAN_REVISION_HASH_SUBJECT, "plan_digest")  # type: ignore[return-value]
+
+
 class PackageBindingV1(StrictContractModel):
+    """What the package is bound to. The commercial binding (``basis`` absent, schema 3.0) names the resolution and,
+    when they exist, the commercial submission, the Customer Purchase BOM, the Order and the commercial resolution id;
+    the LOCAL_PLAN binding (schema 3.1) names the local plan revision (``local_plan``) and none of those."""
+
     project: ValidatedProjectRefV1
     local_validation_hash: HashRef | None = None
     commercial_submission_hash: HashRef | None = None
-    resolution: ResolutionRefV1
+    resolution: ResolutionRefV1 | None = None
     commercial_bom: CommercialBomRefV1 | None = None
     order_ref: OpenSciId | None = None
     commercial_resolution_id: OpenSciId | None = Field(
         None, description="Id of the commercial resolution this package belongs to.")
+    basis: Literal["LOCAL_PLAN"] | None = Field(
+        None, description="LOCAL_PLAN: generated on the user's device from a local assembly plan (absent: commercial).")
+    local_plan: LocalPlanRefV1 | None = Field(None, description="The local plan revision of a LOCAL_PLAN binding.")
 
     @field_validator("local_validation_hash")
     @classmethod
@@ -131,6 +217,24 @@ class PackageBindingV1(StrictContractModel):
     @classmethod
     def _submission(cls, value: HashRef | None) -> HashRef | None:
         return _osc1_subject(value, COMMERCIAL_SUBMISSION_HASH_SUBJECT, "commercial_submission_hash")
+
+    @model_validator(mode="after")
+    def _basis(self) -> PackageBindingV1:
+        if self.basis is None:
+            if self.resolution is None or self.local_plan is not None:
+                raise ValueError("a commercial binding names its resolution and no local plan")
+        elif self.local_plan is None or any(v is not None for v in (
+                self.resolution, self.commercial_submission_hash, self.commercial_bom, self.order_ref,
+                self.commercial_resolution_id)):
+            raise ValueError("a LOCAL_PLAN binding names its local plan and no resolution, commercial submission, Customer "
+                             "Purchase BOM, Order or commercial resolution id")
+        return self
+
+    @property
+    def local(self) -> bool:
+        """True for a LOCAL_PLAN binding (a package generated on the user's device from a local plan)."""
+
+        return self.basis == LOCAL_PLAN_BASIS
 
 
 class PackageFileV1(StrictContractModel):
@@ -149,9 +253,10 @@ class PackageFileV1(StrictContractModel):
 
 class AssemblyPreviewManifestV1(StrictContractModel):
     schema_id: Literal["opensci.assembly_preview.manifest"] = Field(ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_ID, alias="schema")
-    schema_version: Literal["3.0"] = ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION
+    schema_version: Literal["3.0", "3.1"] = Field(
+        ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION, description="3.0: the commercial binding; 3.1: the LOCAL_PLAN binding.")
     package_revision: int = Field(ge=1, description="Revision of the package for this resolution (1 = first revision).")
-    usage: UsageTermsV1 = UsageTermsV1()
+    usage: Annotated[UsageTermsV1 | LocalUsageTermsV1, Field(discriminator="scope")] = UsageTermsV1()
     binding: PackageBindingV1
     files: tuple[PackageFileV1, ...] = Field(min_length=1, max_length=MAX_PACKAGE_FILES - 1)
     package_content_hash: Sha256Digest
@@ -163,6 +268,12 @@ class AssemblyPreviewManifestV1(StrictContractModel):
             raise ValueError("manifest files must be unique and sorted by path")
         if SCENE_PATH not in paths:
             raise ValueError("manifest files must include scene.json")
+        if self.schema_version != manifest_schema_version_for(self.binding):
+            raise ValueError("a manifest states 3.0 exactly for the commercial binding and 3.1 exactly for the LOCAL_PLAN "
+                             "binding")
+        if isinstance(self.usage, LocalUsageTermsV1) != self.binding.local:
+            raise ValueError("the usage terms are THIS_PROJECT for the commercial binding and THIS_PLAN for the LOCAL_PLAN "
+                             "binding")
         expected = content_hash_of(self.content_payload())
         if self.package_content_hash != expected:
             raise ValueError("package_content_hash does not match the manifest content")
@@ -177,6 +288,18 @@ class AssemblyPreviewManifestV1(StrictContractModel):
         payload = self.payload()
         del payload["package_content_hash"]
         return payload
+
+
+def manifest_schema_version_for(binding: PackageBindingV1) -> Literal["3.0", "3.1"]:
+    """The manifest version a writer states for ``binding``: 3.1 for a LOCAL_PLAN binding, else 3.0."""
+
+    return ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION_3_1 if binding.local else ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION
+
+
+def usage_terms_for(binding: PackageBindingV1) -> UsageTermsV1 | LocalUsageTermsV1:
+    """The usage terms of a package with ``binding``."""
+
+    return LocalUsageTermsV1() if binding.local else UsageTermsV1()
 
 
 def content_hash_of(content_payload: dict[str, Any]) -> str:

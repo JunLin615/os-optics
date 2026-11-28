@@ -20,6 +20,7 @@ from .._vendor.shared_contracts.assembly_preview import (
     ValidationSummaryV1,
     assembly_validation_hash,
     interference_outcome,
+    validation_schema_version_for,
 )
 from .._vendor.shared_contracts.optical_design.local_validation import LocalValidationStatusV1, status_severity
 from .._version import DISTRIBUTION_NAME, ENGINE_VERSION
@@ -74,7 +75,7 @@ def build_result(package: AssemblyPreviewPackageV1, outcomes: list[CheckOutcome]
     package_ref = ValidatedPackageRefV1(
         package_content_hash=manifest.package_content_hash, package_revision=manifest.package_revision, project=binding.project,
         resolution=binding.resolution, local_validation_hash=binding.local_validation_hash,
-        commercial_resolution_id=binding.commercial_resolution_id)
+        commercial_resolution_id=binding.commercial_resolution_id, local_plan=binding.local_plan)
     checker = CheckerRefV1(checker_version=ASSEMBLY_CHECKER_VERSION, runtime_kind=detect_runtime_kind(), engine_package=DISTRIBUTION_NAME,
                            engine_version=ENGINE_VERSION, engine_build_id=engine_build_id())
 
@@ -83,7 +84,7 @@ def build_result(package: AssemblyPreviewPackageV1, outcomes: list[CheckOutcome]
 
     body = {
         "schema": "opensci.assembly_local_validation",
-        "schema_version": "2.0",
+        "schema_version": validation_schema_version_for(package_ref),
         "package": dump(package_ref),
         "checker": dump(checker),
         "tolerances": dump(tolerances),

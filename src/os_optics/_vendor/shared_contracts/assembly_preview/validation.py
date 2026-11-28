@@ -6,7 +6,8 @@ nominal beam axes -- and reports the outcome here.
 
 The result states:
 
-* which package was checked (``package_content_hash``), and through its manifest the Project and the resolution;
+* which package was checked (``package_content_hash``), and through its manifest the Project and the resolution (or,
+  schema 2.1, the local assembly plan revision of a package generated on the user's device: ``local_plan``);
   which checker build produced it, and every tolerance it used (``tolerances``);
 * a fixed, ordered list of checks (``ASSEMBLY_CHECK_ORDER``), each with its status, the basis it rests on and how many
   subjects it evaluated;
@@ -34,12 +35,16 @@ from ..common.hashes import HashRef, Sha256Digest, osc1_digest
 from ..common.identifiers import BuildVersion, InstanceKey, OpenSciId
 from ..optical_design.local_validation import (ENGINE_PACKAGE_NAME, EnginePackageName, LocalRuntimeKindV1, LocalValidationStatusV1,
                                                 ValidatedProjectRefV1, status_severity)
-from .manifest import ResolutionRefV1
+from .manifest import LocalPlanRefV1, ResolutionRefV1
 from .scene import GeometryFidelityV1, PartCategoryV1, PartRef
 
 
 ASSEMBLY_LOCAL_VALIDATION_SCHEMA_ID: Literal["opensci.assembly_local_validation"] = "opensci.assembly_local_validation"
 ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION: Literal["2.0"] = "2.0"
+#: 2.1: the result of a package with the LOCAL_PLAN binding (``ValidatedPackageRefV1.local_plan``, no resolution).
+ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION_2_1: Literal["2.1"] = "2.1"
+ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSIONS: tuple[str, ...] = (ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION,
+                                                              ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION_2_1)
 ASSEMBLY_CHECKER_ID: Literal["opensci.assembly_layout_checker"] = "opensci.assembly_layout_checker"
 MAX_ISSUES = 4096
 
@@ -326,14 +331,30 @@ class PartValidationV1(StrictContractModel):
 
 
 class ValidatedPackageRefV1(StrictContractModel):
-    """Which package was checked: its content hash and the binding its manifest declares."""
+    """Which package was checked: its content hash and the binding its manifest declares -- the resolution of a
+    commercial package, or the local plan revision of a LOCAL_PLAN package (exactly one of them)."""
 
     package_content_hash: Sha256Digest
     package_revision: int = Field(ge=1)
     project: ValidatedProjectRefV1
-    resolution: ResolutionRefV1
+    resolution: ResolutionRefV1 | None = None
     local_validation_hash: HashRef | None = None
     commercial_resolution_id: OpenSciId | None = None
+    local_plan: LocalPlanRefV1 | None = None
+
+    @model_validator(mode="after")
+    def _one_basis(self) -> ValidatedPackageRefV1:
+        if (self.resolution is None) == (self.local_plan is None):
+            raise ValueError("a checked package names exactly one of its resolution and its local plan")
+        if self.local_plan is not None and self.commercial_resolution_id is not None:
+            raise ValueError("a locally generated package has no commercial resolution id")
+        return self
+
+
+def validation_schema_version_for(package: ValidatedPackageRefV1) -> Literal["2.0", "2.1"]:
+    """The result version a writer states for a checked package: 2.1 for a LOCAL_PLAN package, else 2.0."""
+
+    return ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION_2_1 if package.local_plan is not None else ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION
 
 
 class CheckerRefV1(StrictContractModel):
@@ -423,7 +444,8 @@ class AssemblyLocalValidationV1(StrictContractModel):
     """The structured result of the local assembly layout check of one verified Assembly Preview Package."""
 
     schema_id: Literal["opensci.assembly_local_validation"] = Field(ASSEMBLY_LOCAL_VALIDATION_SCHEMA_ID, alias="schema")
-    schema_version: Literal["2.0"] = ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION
+    schema_version: Literal["2.0", "2.1"] = Field(
+        ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION, description="2.0: a commercial package; 2.1: a LOCAL_PLAN package.")
     package: ValidatedPackageRefV1
     checker: CheckerRefV1
     tolerances: CheckerTolerancesV1
@@ -436,6 +458,8 @@ class AssemblyLocalValidationV1(StrictContractModel):
 
     @model_validator(mode="after")
     def _check(self) -> AssemblyLocalValidationV1:  # noqa: C901 - one flat list of consistency rules
+        if self.schema_version != validation_schema_version_for(self.package):
+            raise ValueError("a result states 2.0 exactly for a commercial package and 2.1 exactly for a LOCAL_PLAN package")
         if tuple(c.check for c in self.checks) != ASSEMBLY_CHECK_ORDER:
             raise ValueError("checks must list every AssemblyCheckKindV1 once, in ASSEMBLY_CHECK_ORDER")
         for check in self.checks:

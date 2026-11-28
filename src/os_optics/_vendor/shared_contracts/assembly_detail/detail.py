@@ -28,6 +28,12 @@ Everything else in the document is binding, release and usage:
   own window (modelled as <name> <SKU>)" -- the customer's own part may differ from that model;
 * ``usage`` states the terms of use (``DetailUsageTermsV1``).
 
+Schema 3.2 is the supplement of a preview package with the LOCAL_PLAN binding (generated on the user's device from a
+local assembly plan, preview manifest 3.1): its binding names the local plan revision (``local_plan``) instead of the
+commercial resolution and the Customer Purchase BOM, its release basis is ``LOCAL_PLAN``, its terms of use are
+``LocalDetailUsageTermsV1``, and ``line_display_names_zh_cn`` names the plan's design BOM lines. A 3.1 document is
+exactly the commercial supplement it always was.
+
 Every value is an enum, a package-local reference that must resolve in the bound preview scene, a small integer, a
 hash, or one of the customer-facing names above.
 """
@@ -39,7 +45,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, StringConstraints, field_validator, model_validator
 
-from ..assembly_preview.manifest import LOCAL_VALIDATION_HASH_SUBJECT, CommercialBomRefV1, PermittedUseV1
+from ..assembly_preview.manifest import LOCAL_VALIDATION_HASH_SUBJECT, CommercialBomRefV1, LocalPlanRefV1, PermittedUseV1
 from ..assembly_preview.scene import DatumKey, LineRef, PartRef, SettingKindV1
 from ..base import StrictContractModel
 from ..common.hashes import HashProfile, HashRef, Sha256Digest, osc1_digest, require_hash_profile
@@ -51,6 +57,10 @@ ASSEMBLY_DETAIL_SCHEMA_ID: Literal["opensci.assembly_detail.package"] = "opensci
 #: 3.1: ``release.order_number`` / ``release.customer_display_name`` / ``release.delivery_mode``,
 #: ``line_display_names_zh_cn`` and ``customer_supplied_models``.
 ASSEMBLY_DETAIL_SCHEMA_VERSION: Literal["3.1"] = "3.1"
+#: 3.2: the supplement of a LOCAL_PLAN preview package (``DetailBindingV1.local_plan``, release ``LOCAL_PLAN``,
+#: ``LocalDetailUsageTermsV1``).
+ASSEMBLY_DETAIL_SCHEMA_VERSION_3_2: Literal["3.2"] = "3.2"
+ASSEMBLY_DETAIL_SCHEMA_VERSIONS: tuple[str, ...] = (ASSEMBLY_DETAIL_SCHEMA_VERSION, ASSEMBLY_DETAIL_SCHEMA_VERSION_3_2)
 ASSEMBLY_DETAIL_FILE_NAME = "assembly-detail.json"
 ASSEMBLY_DETAIL_MEDIA_TYPE: Literal["application/json"] = "application/json"
 DETAIL_USAGE_STATEMENT: Literal[
@@ -59,6 +69,13 @@ DETAIL_USAGE_STATEMENT: Literal[
 ] = (
     "Assembly detail data of this Project's resolved assembly, for generating its Detailed Assembly Drawing. Not for "
     "redistribution. The drawing files generated from it are yours to keep and use."
+)
+LOCAL_DETAIL_USAGE_STATEMENT: Literal[
+    "Assembly detail data generated on this device from your own assembly plan, for generating its assembly drawing. "
+    "The drawing files generated from it are yours to keep and use."
+] = (
+    "Assembly detail data generated on this device from your own assembly plan, for generating its assembly drawing. "
+    "The drawing files generated from it are yours to keep and use."
 )
 #: Upper bound on dimension references (a multi-optic assembly carries about nine per support chain).
 MAX_DIMENSIONS = 512
@@ -108,6 +125,26 @@ class DetailUsageTermsV1(StrictContractModel):
         return self
 
 
+class LocalDetailUsageTermsV1(StrictContractModel):
+    """Terms of use of a detail package generated on the user's device from the user's own assembly plan (schema 3.2):
+    generating this plan's assembly drawing; the user may pass it on, and the drawing files are theirs."""
+
+    scope: Literal["THIS_PLAN"] = "THIS_PLAN"
+    permitted_uses: tuple[PermittedUseV1, ...] = DETAIL_PERMITTED_USES
+    redistribution: Literal["PERMITTED"] = "PERMITTED"
+    generated_drawings: Literal["CUSTOMER_DELIVERABLE"] = "CUSTOMER_DELIVERABLE"
+    statement: Literal[
+        "Assembly detail data generated on this device from your own assembly plan, for generating its assembly drawing. "
+        "The drawing files generated from it are yours to keep and use."
+    ] = LOCAL_DETAIL_USAGE_STATEMENT
+
+    @model_validator(mode="after")
+    def _exact(self) -> LocalDetailUsageTermsV1:
+        if self.permitted_uses != DETAIL_PERMITTED_USES:
+            raise ValueError("permitted_uses of an assembly detail package are exactly (GENERATE_ASSEMBLY_DRAWING,)")
+        return self
+
+
 # ---------------------------------------------------------------------------------------------- release
 
 
@@ -116,10 +153,12 @@ class ReleaseBasisV1(StrEnum):
 
     * ``CONFIRMED_ORDER`` -- the Order for this resolution and Project, whose corporate bank-transfer payment OpenSci
       confirmed as received. The document names only the basis; the Order itself is the customer's commercial record;
-    * ``DIRECT_RELEASE`` -- released by OpenSci for this Project."""
+    * ``DIRECT_RELEASE`` -- released by OpenSci for this Project;
+    * ``LOCAL_PLAN`` -- generated on the user's device from the user's own assembly plan (schema 3.2)."""
 
     CONFIRMED_ORDER = "CONFIRMED_ORDER"
     DIRECT_RELEASE = "DIRECT_RELEASE"
+    LOCAL_PLAN = "LOCAL_PLAN"
 
 
 class DetailReleaseRefV1(StrictContractModel):
@@ -161,17 +200,20 @@ class CustomerSuppliedModelV1(StrictContractModel):
 
 
 class DetailBindingV1(StrictContractModel):
-    """The one preview package (and through it the Project / Local Validation / resolution / BOM) this supplements.
+    """The one preview package (and through it the Project / Local Validation / resolution / BOM, or the local plan
+    revision) this supplements.
 
     Every value except ``preview_package_*`` must equal what the bound preview manifest declares; the verifier
-    compares them field by field."""
+    compares them field by field. A commercial supplement names the commercial resolution id and the Customer Purchase
+    BOM; a LOCAL_PLAN supplement names the local plan revision instead (exactly one of the two forms)."""
 
     project: ValidatedProjectRefV1
     local_validation_hash: HashRef | None = None
-    commercial_resolution_id: OpenSciId
-    commercial_bom: CommercialBomRefV1
+    commercial_resolution_id: OpenSciId | None = None
+    commercial_bom: CommercialBomRefV1 | None = None
     preview_package_content_hash: Sha256Digest
     preview_package_revision: int = Field(strict=True, ge=1)
+    local_plan: LocalPlanRefV1 | None = None
 
     @field_validator("local_validation_hash")
     @classmethod
@@ -182,6 +224,22 @@ class DetailBindingV1(StrictContractModel):
         if value.subject != LOCAL_VALIDATION_HASH_SUBJECT:
             raise ValueError(f"local_validation_hash subject must be {LOCAL_VALIDATION_HASH_SUBJECT!r}")
         return value
+
+    @model_validator(mode="after")
+    def _form(self) -> DetailBindingV1:
+        commercial = (self.commercial_resolution_id is not None, self.commercial_bom is not None)
+        if self.local_plan is None and commercial != (True, True):
+            raise ValueError("a commercial supplement names the commercial resolution id and the Customer Purchase BOM")
+        if self.local_plan is not None and any(commercial):
+            raise ValueError("a LOCAL_PLAN supplement names its local plan and no commercial resolution or Customer "
+                             "Purchase BOM")
+        return self
+
+    @property
+    def local(self) -> bool:
+        """True for the supplement of a LOCAL_PLAN preview package."""
+
+        return self.local_plan is not None
 
 
 # -------------------------------------------------------------------------------------------- dimensions
@@ -293,8 +351,9 @@ class DimensionV1(StrictContractModel):
 
 class AssemblyDetailPackageV1(StrictContractModel):
     schema_id: Literal["opensci.assembly_detail.package"] = Field(ASSEMBLY_DETAIL_SCHEMA_ID, alias="schema")
-    schema_version: Literal["3.1"] = ASSEMBLY_DETAIL_SCHEMA_VERSION
-    usage: DetailUsageTermsV1 = DetailUsageTermsV1()
+    schema_version: Literal["3.1", "3.2"] = Field(
+        ASSEMBLY_DETAIL_SCHEMA_VERSION, description="3.1: a commercial supplement; 3.2: the supplement of a LOCAL_PLAN package.")
+    usage: Annotated[DetailUsageTermsV1 | LocalDetailUsageTermsV1, Field(discriminator="scope")] = DetailUsageTermsV1()
     binding: DetailBindingV1
     release: DetailReleaseRefV1
     dimensions: tuple[DimensionV1, ...] = Field(min_length=1, max_length=MAX_DIMENSIONS)
@@ -302,7 +361,8 @@ class AssemblyDetailPackageV1(StrictContractModel):
         (), max_length=MAX_DIMENSIONS, description="The catalog model of each customer-supplied catalog component, by instance id.")
     line_display_names_zh_cn: dict[LineRef, CustomerFacingName] = Field(
         default_factory=dict, max_length=MAX_DIMENSIONS,
-        description="The Simplified Chinese name of Customer Purchase BOM lines of the bound scene, by line key.")
+        description="The Simplified Chinese name of Customer Purchase BOM lines (3.2: design BOM lines) of the bound scene, "
+                    "by line key.")
     detail_content_hash: Sha256Digest = Field(description="osc1 digest of this document without detail_content_hash.")
 
     @model_validator(mode="after")
@@ -313,6 +373,14 @@ class AssemblyDetailPackageV1(StrictContractModel):
         ids = [m.instance_id for m in self.customer_supplied_models]
         if ids != sorted(set(ids)):
             raise ValueError("customer_supplied_models are unique and ordered by instance_id")
+        local = self.binding.local
+        if self.schema_version != detail_schema_version_for(self.binding):
+            raise ValueError("a detail package states 3.1 exactly for a commercial supplement and 3.2 exactly for the "
+                             "supplement of a LOCAL_PLAN package")
+        if local != (self.release.basis is ReleaseBasisV1.LOCAL_PLAN):
+            raise ValueError("the release basis is LOCAL_PLAN exactly for the supplement of a LOCAL_PLAN package")
+        if local != isinstance(self.usage, LocalDetailUsageTermsV1):
+            raise ValueError("the usage terms are THIS_PROJECT for a commercial supplement and THIS_PLAN for a LOCAL_PLAN one")
         if self.detail_content_hash != detail_content_hash_of(self.content_payload()):
             raise ValueError("detail_content_hash does not match the document")
         return self
@@ -330,6 +398,18 @@ class AssemblyDetailPackageV1(StrictContractModel):
             if dim.dim_ref == dim_ref:
                 return dim
         raise KeyError(dim_ref)
+
+
+def detail_schema_version_for(binding: DetailBindingV1) -> Literal["3.1", "3.2"]:
+    """The detail version a writer states for ``binding``: 3.2 for a LOCAL_PLAN supplement, else 3.1."""
+
+    return ASSEMBLY_DETAIL_SCHEMA_VERSION_3_2 if binding.local else ASSEMBLY_DETAIL_SCHEMA_VERSION
+
+
+def detail_usage_terms_for(binding: DetailBindingV1) -> DetailUsageTermsV1 | LocalDetailUsageTermsV1:
+    """The usage terms of a detail package with ``binding``."""
+
+    return LocalDetailUsageTermsV1() if binding.local else DetailUsageTermsV1()
 
 
 def detail_content_hash_of(content_payload: dict[str, Any]) -> str:

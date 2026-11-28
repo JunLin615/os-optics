@@ -3,7 +3,8 @@
 * ``scene`` -- ``AssemblyPreviewSceneV1``: resolved parts with their OpenSci product identities, poses, support
   tree, mates, settings, fixations, manual operations, breadboard, beam reference, DOF delivery and assembly notes;
 * ``manifest`` -- ``AssemblyPreviewManifestV1``: Project / Local Validation / resolution / Customer Purchase BOM
-  binding, usage terms, file digests, content hash;
+  binding (schema 3.0), or the LOCAL_PLAN binding of a package generated on the user's device from a local assembly plan
+  (schema 3.1), usage terms, file digests, content hash;
 * ``package`` -- file layout, deterministic bytes and archive, and ``verify_assembly_preview_package``;
 * ``validation`` -- ``AssemblyLocalValidationV1``: the result of the local (user-device) layout and collision check
   of one verified package.
@@ -12,6 +13,18 @@
 from .manifest import (
     ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_ID,
     ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION,
+    ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION_3_1,
+    ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSIONS,
+    DESIGN_BOM_HASH_SUBJECT,
+    LOCAL_PLAN_BASIS,
+    LOCAL_PREVIEW_PERMITTED_USES,
+    LOCAL_PREVIEW_USAGE_STATEMENT,
+    PLAN_REVISION_HASH_SUBJECT,
+    DesignBomRefV1,
+    LocalPlanRefV1,
+    LocalUsageTermsV1,
+    manifest_schema_version_for,
+    usage_terms_for,
     COMMERCIAL_BOM_HASH_SUBJECT,
     COMMERCIAL_SUBMISSION_HASH_SUBJECT,
     LOCAL_VALIDATION_HASH_SUBJECT,
@@ -33,6 +46,7 @@ from .package import (
     GLB_GENERATOR,
     AssemblyPreviewPackageError,
     AssemblyPreviewPackageV1,
+    binding_pin_problems,
     build_assembly_preview_package,
     glb_problems,
     json_file_bytes,
@@ -118,6 +132,8 @@ from .validation import (
     ASSEMBLY_CHECKER_ID,
     ASSEMBLY_LOCAL_VALIDATION_SCHEMA_ID,
     ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION,
+    ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION_2_1,
+    ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSIONS,
     SUMMARY_STATEMENT,
     CHECK_BASIS,
     FIDELITY_ORDER,
@@ -141,6 +157,7 @@ from .validation import (
     MetricV1,
     PartValidationV1,
     ValidatedPackageRefV1,
+    validation_schema_version_for,
     ValidationSummaryV1,
     assembly_validation_hash,
     interference_outcome,
@@ -151,9 +168,24 @@ __all__ = [
     "ASSEMBLY_CHECK_ORDER",
     "ASSEMBLY_LOCAL_VALIDATION_SCHEMA_ID",
     "ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION",
+    "ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSION_2_1",
+    "ASSEMBLY_LOCAL_VALIDATION_SCHEMA_VERSIONS",
     "ASSEMBLY_PREVIEW_DESCRIPTION",
     "ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_ID",
     "ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION",
+    "ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION_3_1",
+    "ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSIONS",
+    "DESIGN_BOM_HASH_SUBJECT",
+    "LOCAL_PLAN_BASIS",
+    "LOCAL_PREVIEW_PERMITTED_USES",
+    "LOCAL_PREVIEW_USAGE_STATEMENT",
+    "PLAN_REVISION_HASH_SUBJECT",
+    "DesignBomRefV1",
+    "LocalPlanRefV1",
+    "LocalUsageTermsV1",
+    "binding_pin_problems",
+    "manifest_schema_version_for",
+    "usage_terms_for",
     "ASSEMBLY_PREVIEW_SCENE_SCHEMA_ID",
     "ASSEMBLY_PREVIEW_SCENE_SCHEMA_VERSION",
     "ASSEMBLY_PREVIEW_SCENE_SCHEMA_VERSIONS",
@@ -259,6 +291,7 @@ __all__ = [
     "TravelBasisV1",
     "UsageTermsV1",
     "ValidatedPackageRefV1",
+    "validation_schema_version_for",
     "ValidationSummaryV1",
     "assembly_validation_hash",
     "build_assembly_preview_package",
