@@ -21,6 +21,13 @@ FORMAT_ID = ".len"
 _NUMBER = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 _TOKEN = re.compile(r'\s+|//.*|"[^"\n]*"|;|(?:[^\s;"/]|/(?!/))+')
 _SYSTEM = {"UNI", "WV", "WW", "EBR", "NAO", "ANG", "OBH"}
+# TH is in lens units. Object distances of this magnitude represent an object at infinity.
+_INFINITE_OBJECT_DISTANCE = Decimal('1e8')
+# Optical surface gaps must stay below the large spacing used to denote infinity.
+_INFINITE_SURFACE_SPACING = Decimal('9.9e9')
+# Without WV the primary d line is followed by the F and C lines, all in micrometres of air wavelength.
+_DEFAULT_AIR_WAVELENGTHS_UM = (Decimal('0.58756'), Decimal('0.48613'), Decimal('0.65627'))
+_SUPPORTED_AIR_BAND_UM = (Decimal('0.2'), Decimal('99'))
 _ASPHERE_POWERS = {"AD": 4, "AE": 6, "AF": 8, "AG": 10}
 _SURFACE = {"AIR", "GLA", "RD", "TH", "AP", "AST", "CC", *_ASPHERE_POWERS}
 
@@ -152,7 +159,7 @@ def _surface(block, unit: str, is_stop: bool, last: bool) -> IrSurface:
             raise refuse(E.UNSUPPORTED_FEATURE, "GLA must name a single catalog glass", gla.loc)
         material = MaterialRef(gla.args[0], gla.loc)
     thickness = data["TH"].scalar() if "TH" in data else Decimal(0)
-    if abs(thickness) >= Decimal('9.9e9') or not last and thickness <= 0:
+    if abs(thickness) >= _INFINITE_SURFACE_SPACING or not last and thickness <= 0:
         raise refuse(E.THICKNESS_INVALID, "expected finite axial spacing, positive between physical surfaces",
                      data["TH"].loc if "TH" in data else loc.at("TH"))
     coeffs = []
@@ -185,9 +192,10 @@ def _spectrum(system, header, environment):
     if wave:
         values = tuple(wave.number(i) for i in range(len(wave.args)))
     else:
-        values = (Decimal("0.58756"), Decimal("0.48613"), Decimal("0.65627"))
-    if not values or any(not Decimal("0.2") <= v <= Decimal("99") for v in values):
-        raise refuse(E.VALUE_INVALID, "expected air wavelengths between 0.2 and 99 micrometres", (wave or header).loc)
+        values = _DEFAULT_AIR_WAVELENGTHS_UM
+    low, high = _SUPPORTED_AIR_BAND_UM
+    if not values or any(not low <= v <= high for v in values):
+        raise refuse(E.VALUE_INVALID, f"expected air wavelengths between {low} and {high} micrometres", (wave or header).loc)
     weight = system.get("WW")
     if weight:
         weight.expect(len(values))
@@ -236,7 +244,7 @@ def read_len(text: str, *, default_unit: str = "mm", requested_unit: str | None 
     if "TH" not in obj:
         raise refuse(E.FIELD_MISSING, "object thickness must be explicit", obj_loc.at("TH"))
     distance = obj["TH"].scalar()
-    infinite = abs(distance) >= Decimal('1e8')
+    infinite = abs(distance) >= _INFINITE_OBJECT_DISTANCE
     if not infinite and distance <= 0:
         raise refuse(E.UNSUPPORTED_FEATURE, "the finite object must precede the first vertex", obj["TH"].loc)
     if "AP" in obj:
