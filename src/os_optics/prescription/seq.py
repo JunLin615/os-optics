@@ -14,6 +14,8 @@ from .csv_table import MATERIAL_ID_MAX, MATERIAL_ID_PATTERN, NUMBER_MAX, NUMBER_
 from .errors import ImportWarning, PrescriptionErrorCode as E, SourceLocation, refuse
 
 FORMAT_ID = ".seq"
+# SO uses a large positive spacing in lens units as an alternative to the INF spelling.
+_INFINITE_OBJECT_SPACING = Decimal('1e10')
 _UNITS = {"M": "mm", "MM": "mm", "C": "cm", "CM": "cm", "I": "in", "IN": "in"}
 _TOKEN = re.compile(r'''"[^"\n]*"|'[^'\n]*'|![^\n]*|[^\s"'!;&]+|[;&]|["']''')
 _GLOBALS = {"LEN", "TITLE", "DIM", "RDM", "EPD", "NAO", "FNO", "WL", "REF", "WTW", "TEM", "INI",
@@ -268,7 +270,7 @@ def read_seq(text: str, *, default_unit: str = 'mm', requested_unit: str | None 
     if obj.number(obj.args[0]) != 0:
         raise obj.unsupported('curved object surface')
     object_spacing = None if obj.args[1].upper() in {'INF', 'INFINITY'} else obj.number(obj.args[1])
-    infinite = object_spacing is None or object_spacing >= Decimal('1e10')
+    infinite = object_spacing is None or object_spacing >= _INFINITE_OBJECT_SPACING
     distance = None if infinite else ir.to_mm(object_spacing, unit)
     if distance is not None and distance <= 0:
         raise obj.unsupported('only positive real-object distances and objects at infinity are supported')
