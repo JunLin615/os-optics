@@ -2015,7 +2015,7 @@ def verify_assembly_drawing(files: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------------------------- local assembly plans
 
 
-def _plan_error(exc: Exception) -> dict[str, Any]:
+def _assembly_plan_error(exc: Exception) -> dict[str, Any]:
     """The reply of a refused plan call (``AssemblyPlanError`` / ``MechanicalCatalogError`` / a malformed document)."""
 
     if isinstance(exc, ValidationError):
@@ -2088,7 +2088,7 @@ def derive_assembly_plan(project: Any, mechanical: Any, options: Any = None, run
         result = derive_plan(project, mechanical=_plan_sources(mechanical), catalog=catalog, options=dict(options or {}),
                              run=_plan_record(run))
     except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except LocalRunError as exc:
         return _error(exc.problems)
     return {"ok": True, "plan": result.revision.payload(), "project": result.project.payload(),
@@ -2108,7 +2108,7 @@ def check_assembly_plan(plan: Any, project: Any, mechanical: Any, options: Any =
         check = check_content(revision, context, derive_findings=[f for f in revision.findings if f.source.value == "DERIVE"],
                               run=_plan_record((options or {}).get("run")))
     except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except LocalRunError as exc:
         return _error(exc.problems)
     return {"ok": True, **_plan_reply(check.revision(revision), check)}
@@ -2129,7 +2129,7 @@ def apply_assembly_plan_ops(plan: Any, project: Any, ops: Any, mechanical: Any, 
         nxt, edited, results, check = apply_plan_ops(revision, document, list(ops or ()), context=context,
                                                      require_check=bool((options or {}).get("require_check", False)))
     except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except LocalRunError as exc:
         return _error(exc.problems)
     return {"ok": True, "plan": nxt.payload(), "project": edited.payload(),
@@ -2150,7 +2150,7 @@ def assembly_plan_preview(plan: Any, project: Any, mechanical: Any, *, catalog: 
         revision, _, context = _plan_inputs(plan, project, mechanical, catalog)
         package = project_plan_package(revision, context)
     except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except LocalRunError as exc:
         return _error(exc.problems)
     validation = validate_assembly_layout(package)
@@ -2178,7 +2178,7 @@ def assembly_plan_drawing(plan: Any, project: Any, mechanical: Any, options: Any
         outcome = plan_drawing(revision, None, context=context, locale=options.get("locale", "en"),
                                diagnostic=bool(options.get("diagnostic", False)), findings=check.findings, validation=check.validation)
     except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except AssemblyDrawingError as exc:
         return {"ok": False, "error": exc.as_dict()}
     except LocalRunError as exc:
@@ -2204,7 +2204,7 @@ def assembly_plan_bom(plan: Any, options: Any = None) -> dict[str, Any]:
         else:
             bom, report = design_bom(revision), None
     except (AssemblyPlanError, ValidationError) as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     except ValueError as exc:
         return _drawing_error("INPUT_INVALID", str(exc))
     return {"ok": True, "bom": bom, "report": report}
@@ -2221,7 +2221,7 @@ def mechanical_catalog(mechanical: Any, options: Any = None) -> dict[str, Any]:
     try:
         sources = _plan_sources(mechanical)
     except MechanicalCatalogError as exc:
-        return _plan_error(exc)
+        return _assembly_plan_error(exc)
     identities = [i for i in sources.identities() if options.get("kind") in (None, i.kind) and options.get("sku") in (None, i.opensci_sku)]
     return {"ok": True, "documents": [r.model_dump(mode="json") for r in sources.binding()],
             "identities": [i.payload() for i in identities]}
