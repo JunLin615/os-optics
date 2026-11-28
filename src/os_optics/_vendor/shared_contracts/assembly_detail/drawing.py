@@ -25,6 +25,13 @@ unless the caller asks for a diagnostic sheet; with that request the status sele
 (``DRAWING_STATUS_FOR_VALIDATION``): FAIL gives a ``DIAGNOSTIC_VALIDATION_FAILED`` sheet and UNKNOWN / OUT_OF_MODEL_SCOPE
 a ``DIAGNOSTIC_VALIDATION_INCOMPLETE`` sheet, both with ``delivery_ready = false`` and the status stated on the sheet.
 
+Schema 4.2: the drawing of a preview package with the LOCAL_PLAN binding (generated on the user's device from a local
+assembly plan; preview manifest 3.1, detail 3.2): the binding names the local plan revision (``local_plan``) instead of
+the commercial resolution and the Customer Purchase BOM, the parts legend is the plan's design BOM (source
+``DESIGN_BOM``, every row stating who supplies the part: ``OPENSCI``, ``CUSTOMER_OWNED`` or ``UNRESOLVED``), item balloons
+carry design BOM lines, and the description is ``LOCAL_DRAWING_DESCRIPTION`` ("Assembly drawing of your design ...").
+A drawing states 4.1 exactly for the commercial binding and 4.2 exactly for the local one.
+
 Schema 4.1: the status ``DIAGNOSTIC_VALIDATION_INCOMPLETE``; the drawing status is exactly the one its validation
 status selects.
 
@@ -49,7 +56,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, StringConstraints, ValidationError, model_validator
 
-from ..assembly_preview.manifest import CommercialBomRefV1
+from ..assembly_preview.manifest import CommercialBomRefV1, DesignBomRefV1, LocalPlanRefV1
 from ..assembly_preview.package import json_file_bytes
 from ..assembly_preview.scene import (
     AssemblyNoteCodeV1,
@@ -71,6 +78,10 @@ from .detail import CustomerFacingName, DetailReleaseRefV1, DimensionBasisV1, Di
 ASSEMBLY_DRAWING_RESULT_SCHEMA_ID: Literal["opensci.assembly_drawing.result"] = "opensci.assembly_drawing.result"
 ASSEMBLY_DRAWING_MANIFEST_SCHEMA_ID: Literal["opensci.assembly_drawing.manifest"] = "opensci.assembly_drawing.manifest"
 ASSEMBLY_DRAWING_SCHEMA_VERSION: Literal["4.1"] = "4.1"
+#: 4.2: the drawing of a LOCAL_PLAN preview package (``DrawingBindingV1.local_plan``, legend source ``DESIGN_BOM`` with a
+#: ``supply`` on every row, ``LOCAL_DRAWING_DESCRIPTION``).
+ASSEMBLY_DRAWING_SCHEMA_VERSION_4_2: Literal["4.2"] = "4.2"
+ASSEMBLY_DRAWING_SCHEMA_VERSIONS: tuple[str, ...] = (ASSEMBLY_DRAWING_SCHEMA_VERSION, ASSEMBLY_DRAWING_SCHEMA_VERSION_4_2)
 ASSEMBLY_DRAWING_GENERATOR_ID: Literal["opensci.engine.assembly_drawing"] = "opensci.engine.assembly_drawing"
 
 DRAWING_SVG_PATH = "assembly_drawing.svg"
@@ -89,6 +100,15 @@ DRAWING_DESCRIPTION: Literal[
     "Detailed Assembly Drawing of your OpenSci system. Dimensions in millimetres, each marked with its basis. Item "
     "balloons carry the Customer Purchase BOM line of each part."
 )
+LOCAL_DRAWING_DESCRIPTION: Literal[
+    "Assembly drawing of your design. Dimensions in millimetres, each marked with its basis. Item balloons carry the "
+    "design BOM line of each part."
+] = (
+    "Assembly drawing of your design. Dimensions in millimetres, each marked with its basis. Item balloons carry the "
+    "design BOM line of each part."
+)
+#: Who supplies a part of a 4.2 parts legend (the plan item's supply).
+LegendSupplyV1 = Literal["OPENSCI", "CUSTOMER_OWNED", "UNRESOLVED"]
 
 #: The languages a drawing sheet is written in.
 DrawingLocaleV1 = Literal["en", "zh-CN"]
@@ -137,6 +157,18 @@ def _status_problem(validation: AssemblyValidationStatusV1, status: DrawingStatu
         return f"no drawing is generated for a local assembly validation of status {validation.value}"
     if status is not expected:
         return f"a drawing whose local assembly validation is {validation.value} is {expected.value}"
+    return None
+
+
+def drawing_schema_version_for(binding: DrawingBindingV1) -> Literal["4.1", "4.2"]:
+    """The drawing version a writer states for ``binding``: 4.2 for a LOCAL_PLAN package's drawing, else 4.1."""
+
+    return ASSEMBLY_DRAWING_SCHEMA_VERSION_4_2 if binding.local else ASSEMBLY_DRAWING_SCHEMA_VERSION
+
+
+def _version_problem(version: str, binding: DrawingBindingV1) -> str | None:
+    if version != drawing_schema_version_for(binding):
+        return "a drawing states 4.1 exactly for a commercial package and 4.2 exactly for a LOCAL_PLAN package"
     return None
 
 
@@ -196,16 +228,37 @@ class StepActionV1(StrEnum):
 
 
 class DrawingBindingV1(StrictContractModel):
-    """The exact sources the drawing was generated from (all copied from the verified packages)."""
+    """The exact sources the drawing was generated from (all copied from the verified packages): the commercial
+    resolution id and Customer Purchase BOM of a commercial package (4.1), or the local plan revision of a LOCAL_PLAN
+    package (4.2), exactly one of the two forms."""
 
     project: ValidatedProjectRefV1
     local_validation_hash: HashRef | None = None
-    commercial_resolution_id: OpenSciId
-    commercial_bom: CommercialBomRefV1
+    commercial_resolution_id: OpenSciId | None = None
+    commercial_bom: CommercialBomRefV1 | None = None
     preview_package_content_hash: Sha256Digest
     preview_package_revision: int = Field(strict=True, ge=1)
     detail_content_hash: Sha256Digest
     release: DetailReleaseRefV1
+    local_plan: LocalPlanRefV1 | None = None
+
+    @model_validator(mode="after")
+    def _form(self) -> DrawingBindingV1:
+        commercial = (self.commercial_resolution_id is not None, self.commercial_bom is not None)
+        if self.local_plan is None and commercial != (True, True):
+            raise ValueError("the drawing of a commercial package names its commercial resolution id and Customer Purchase BOM")
+        if self.local_plan is not None and any(commercial):
+            raise ValueError("the drawing of a LOCAL_PLAN package names its local plan and no commercial resolution or "
+                             "Customer Purchase BOM")
+        if (self.local_plan is not None) != (self.release.basis.value == "LOCAL_PLAN"):
+            raise ValueError("the release basis is LOCAL_PLAN exactly for the drawing of a LOCAL_PLAN package")
+        return self
+
+    @property
+    def local(self) -> bool:
+        """True for the drawing of a LOCAL_PLAN package."""
+
+        return self.local_plan is not None
 
 
 class DrawingGeneratorRefV1(StrictContractModel):
@@ -262,18 +315,33 @@ class DrawingBalloonV1(StrictContractModel):
 
 
 class PartsLegendRowV1(StrictContractModel):
+    """One part of the sheet with its BOM line. ``supply`` (4.2 only, required there): who supplies the part."""
+
     commercial_line_ref: LineRef
     part_ref: PartRef
     opensci_sku: OpenSciSku
     display_name: DisplayText
+    supply: LegendSupplyV1 | None = None
 
 
 class PartsLegendV1(StrictContractModel):
-    """The parts on the sheet, each with its line of the bound Customer Purchase BOM (quantities and prices are in the BOM)."""
+    """The parts on the sheet, each with its line of the bound Customer Purchase BOM (quantities and prices are in the
+    BOM; 4.1), or of the local plan's design BOM with who supplies it (``DESIGN_BOM``; 4.2)."""
 
-    source: Literal["CUSTOMER_PURCHASE_BOM"] = "CUSTOMER_PURCHASE_BOM"
-    commercial_bom: CommercialBomRefV1
+    source: Literal["CUSTOMER_PURCHASE_BOM", "DESIGN_BOM"] = "CUSTOMER_PURCHASE_BOM"
+    commercial_bom: CommercialBomRefV1 | None = None
+    design_bom: DesignBomRefV1 | None = None
     rows: tuple[PartsLegendRowV1, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _source(self) -> PartsLegendV1:
+        design = self.source == "DESIGN_BOM"
+        if (self.commercial_bom is None) != design or (self.design_bom is None) == design:
+            raise ValueError("a parts legend references exactly the BOM its source names")
+        if any((row.supply is None) == design for row in self.rows):
+            raise ValueError("every row of a DESIGN_BOM legend states its supply, and no row of a Customer Purchase BOM "
+                             "legend does")
+        return self
 
 
 class AssemblyStepV1(StrictContractModel):
@@ -327,7 +395,8 @@ class OpticalSpacingRowV1(StrictContractModel):
 
 class AssemblyDrawingResultV1(StrictContractModel):
     schema_id: Literal["opensci.assembly_drawing.result"] = Field(ASSEMBLY_DRAWING_RESULT_SCHEMA_ID, alias="schema")
-    schema_version: Literal["4.1"] = ASSEMBLY_DRAWING_SCHEMA_VERSION
+    schema_version: Literal["4.1", "4.2"] = Field(
+        ASSEMBLY_DRAWING_SCHEMA_VERSION, description="4.1: a commercial package's drawing; 4.2: a LOCAL_PLAN package's.")
     generator: DrawingGeneratorRefV1
     binding: DrawingBindingV1
     validation: DrawingValidationRefV1
@@ -336,7 +405,9 @@ class AssemblyDrawingResultV1(StrictContractModel):
     delivery_ready: bool = Field(description="True exactly for a DETAILED_ASSEMBLY_DRAWING.")
     description: Literal[
         "Detailed Assembly Drawing of your OpenSci system. Dimensions in millimetres, each marked with its basis. Item "
-        "balloons carry the Customer Purchase BOM line of each part."
+        "balloons carry the Customer Purchase BOM line of each part.",
+        "Assembly drawing of your design. Dimensions in millimetres, each marked with its basis. Item balloons carry the "
+        "design BOM line of each part.",
     ] = DRAWING_DESCRIPTION
     sheet: DrawingSheetV1 = DrawingSheetV1.A3_LANDSCAPE_420x297_MM
     views: tuple[DrawingViewV1, ...] = Field(min_length=1)
@@ -355,7 +426,16 @@ class AssemblyDrawingResultV1(StrictContractModel):
     def _check(self) -> AssemblyDrawingResultV1:
         if problem := _status_problem(self.validation.status, self.drawing_status, self.delivery_ready):
             raise ValueError(problem)
-        if self.parts_legend.commercial_bom != self.binding.commercial_bom:
+        if problem := _version_problem(self.schema_version, self.binding):
+            raise ValueError(problem)
+        local = self.binding.local
+        if self.description != (LOCAL_DRAWING_DESCRIPTION if local else DRAWING_DESCRIPTION):
+            raise ValueError("the description is LOCAL_DRAWING_DESCRIPTION exactly for the drawing of a LOCAL_PLAN package")
+        legend = self.parts_legend
+        if local:
+            if legend.source != "DESIGN_BOM" or legend.design_bom != self.binding.local_plan.design_bom:  # type: ignore[union-attr]
+                raise ValueError("the parts legend must reference the bound local plan's design BOM")
+        elif legend.source != "CUSTOMER_PURCHASE_BOM" or legend.commercial_bom != self.binding.commercial_bom:
             raise ValueError("the parts legend must reference the bound Customer Purchase BOM")
         ids = [c.design_instance_id for c in self.customer_supplied_components]
         if ids != sorted(set(ids)):
@@ -400,7 +480,7 @@ class AssemblyDrawingManifestV1(StrictContractModel):
     """The local output record of one drawing generation: what was generated, from exactly what, by which build."""
 
     schema_id: Literal["opensci.assembly_drawing.manifest"] = Field(ASSEMBLY_DRAWING_MANIFEST_SCHEMA_ID, alias="schema")
-    schema_version: Literal["4.1"] = ASSEMBLY_DRAWING_SCHEMA_VERSION
+    schema_version: Literal["4.1", "4.2"] = ASSEMBLY_DRAWING_SCHEMA_VERSION
     generator: DrawingGeneratorRefV1
     binding: DrawingBindingV1
     validation: DrawingValidationRefV1
@@ -416,6 +496,8 @@ class AssemblyDrawingManifestV1(StrictContractModel):
         if [f.path for f in self.files] != sorted(_FILE_SPEC):
             raise ValueError(f"files must be exactly {sorted(_FILE_SPEC)} in that order")
         if problem := _status_problem(self.validation.status, self.drawing_status, self.delivery_ready):
+            raise ValueError(problem)
+        if problem := _version_problem(self.schema_version, self.binding):
             raise ValueError(problem)
         if self.manifest_content_hash != osc1_digest(self.hashed_payload()):
             raise ValueError("manifest_content_hash does not match the manifest")
@@ -441,7 +523,7 @@ def drawing_manifest_for(result: AssemblyDrawingResultV1, files: Mapping[str, by
                         "sha256": hashlib.sha256(data).hexdigest()})
     content = {
         "schema": ASSEMBLY_DRAWING_MANIFEST_SCHEMA_ID,
-        "schema_version": ASSEMBLY_DRAWING_SCHEMA_VERSION,
+        "schema_version": result.schema_version,
         "generator": result.generator.model_dump(mode="json", by_alias=True, exclude_none=True),
         "binding": result.binding.model_dump(mode="json", by_alias=True, exclude_none=True),
         "validation": result.validation.model_dump(mode="json", by_alias=True, exclude_none=True),
@@ -486,7 +568,7 @@ def verify_drawing_outputs(files: Mapping[str, bytes]) -> tuple[str, ...]:
         problems.append(f"{DRAWING_RESULT_PATH} is not in canonical file form")
     if result.result_hash != manifest.drawing_result_hash:
         problems.append("the manifest names another drawing result")
-    for label in ("generator", "binding", "validation", "locale", "drawing_status", "delivery_ready"):
+    for label in ("schema_version", "generator", "binding", "validation", "locale", "drawing_status", "delivery_ready"):
         if getattr(result, label) != getattr(manifest, label):
             problems.append(f"result and manifest disagree on {label}")
     if not bytes(files[DRAWING_PDF_PATH]).startswith(b"%PDF-"):

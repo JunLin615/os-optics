@@ -34,7 +34,7 @@ the right-hand text flows through the text columns and breaks tables between row
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from .._vendor.shared_contracts.assembly_detail import DimensionBasisV1, DimensionKindV1, DimensionV1, DrawingStatusV1, MeasureAxisV1
@@ -80,8 +80,8 @@ from .steps import (
     AXIS_LETTER,
     UNMOUNTED_REASON,
     Step,
-    Words,
     customer_rows,
+    words_for,
     customer_what,
     dof_rows,
     fastener_text,
@@ -379,10 +379,13 @@ def _lengthwise(view: View, a: Vec3, b: Vec3) -> bool:
 class SheetBuilder:
     def __init__(self, facts: DrawingFacts, *, drawing_status: DrawingStatusV1, validation_status: str, validation_issues: Sequence[str],
                  checker_version: str, steps: Sequence[Step], generator_version: str, validation_interference: str,
-                 locale: str = "en", checks_passed: int = 0, checks_evaluated: int = 1):
+                 locale: str = "en", checks_passed: int = 0, checks_evaluated: int = 1,
+                 legend_supply: Mapping[str, str] | None = None):
         self.f = facts
         self.locale = locale
-        self.w = Words(locale, table=facts.board.customer_table)
+        #: The drawing of a local assembly plan: who supplies each part of the legend (by part_ref), from its design BOM.
+        self.legend_supply = dict(legend_supply or {})
+        self.w = words_for(facts, locale)
         self.checks_passed = checks_passed
         self.checks_evaluated = checks_evaluated
         self.drawing_status = drawing_status
@@ -2307,17 +2310,21 @@ class SheetBuilder:
         edges = L.LEGEND_COLUMNS.edges(x0, x1)
         row_h = size * L.LINE_FACTOR + 1.0
         zh_names = self.f.detail.detail.line_display_names_zh_cn if self.locale == "zh-CN" else {}
-        name_lines = [wrap(zh_names.get(p.line_ref) or p.display_name, edges[3] - edges[2] - 1.0, size * TEXT_SMALL_FACTOR)
-                      for p in rows]
+        name_lines = [wrap(self._legend_name(p, zh_names), edges[3] - edges[2] - 1.0, size * TEXT_SMALL_FACTOR) for p in rows]
         heights = [max(1, len(n)) * size * TEXT_SMALL_FACTOR * L.LINE_FACTOR + 1.0 for n in name_lines]
         title_lines = wrap(self.w("legend.title"), x1 - x0 - 2.0, size, True)
         total = len(title_lines) * size * L.LINE_FACTOR + 1.0 + row_h + sum(heights)
         y = y_bottom - total
         top = y
         g = self.cv
-        bom = self.f.preview.manifest.binding.commercial_bom
-        g.group({"class": "parts-legend", "data-source": "CUSTOMER_PURCHASE_BOM",
-                 "data-bom-hash": bom.bom_hash.digest if bom is not None else ""})
+        binding = self.f.preview.manifest.binding
+        if binding.local:
+            g.group({"class": "parts-legend", "data-source": "DESIGN_BOM",
+                     "data-bom-hash": binding.local_plan.design_bom.bom_hash.digest})  # type: ignore[union-attr]
+        else:
+            bom = binding.commercial_bom
+            g.group({"class": "parts-legend", "data-source": "CUSTOMER_PURCHASE_BOM",
+                     "data-bom-hash": bom.bom_hash.digest if bom is not None else ""})
         g.rect((x0, top, x1, y_bottom), S_TABLE)
         yy = y + size + TEXT_DESCENT
         for line in title_lines:
@@ -2330,7 +2337,10 @@ class SheetBuilder:
         y += row_h
         g.line((x0, y), (x1, y), S_TABLE_THIN)
         for p, lines, h in zip(rows, name_lines, heights):
-            g.group({"class": "legend-row", "data-line-ref": p.line_ref, "data-part-ref": p.part_ref, "data-sku": p.sku})
+            row_attrs = {"class": "legend-row", "data-line-ref": p.line_ref, "data-part-ref": p.part_ref, "data-sku": p.sku}
+            if p.part_ref in self.legend_supply:
+                row_attrs["data-supply"] = self.legend_supply[p.part_ref]
+            g.group(row_attrs)
             base = y + size * TEXT_SMALL_FACTOR + TEXT_DESCENT
             self._text((edges[0] + 1.0, base), p.line_ref, size, bold=True, track=False)
             fit = size * TEXT_SMALL_FACTOR
@@ -2346,6 +2356,15 @@ class SheetBuilder:
             g.line((ex, top + len(title_lines) * size * L.LINE_FACTOR + 1.0), (ex, y_bottom), S_TABLE_THIN)
         g.end()
         return top
+
+    def _legend_name(self, p, zh_names: Mapping[str, str]) -> str:  # noqa: ANN001 - model.PartFacts
+        """A legend row's name; on a local plan's drawing a part OpenSci does not supply says who does."""
+
+        name = zh_names.get(p.line_ref) or p.display_name
+        supply = self.legend_supply.get(p.part_ref)
+        if supply is None or supply == "OPENSCI":
+            return name
+        return f"{name} ({self.w(f'legend.supply.{supply}')})"
 
     def _title_block_rect(self) -> Rect:
         x0, _, x1, y1 = self.geometry.text_columns()[-1]

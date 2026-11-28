@@ -1,31 +1,31 @@
 {
   "files": {
     "shared_contracts/assembly_detail/__init__.py": {
-      "sha256": "9db4325c8872b6f2cf581f6c08e1defa44b7802d2d63e8aa3f72354645c07f99"
+      "sha256": "93f3fd1cde88c28c67422fb62f7de375bce82ca65df47c1d04fd20a7248977da"
     },
     "shared_contracts/assembly_detail/detail.py": {
-      "sha256": "43b4fdadd739027a6d8e4fcfbeca527212dc564f22e657392f88760a81f6844d"
+      "sha256": "3d2cf6cf0cf230c1ba89f860332592890dd55dfa1280c22d08038919b2939f26"
     },
     "shared_contracts/assembly_detail/drawing.py": {
-      "sha256": "4f545c727ed74a9655aa3932e1ca8cea067cf938226abe70d0f50693e133764e"
+      "sha256": "08a1f1de7e3e1cd126d16cd5a1b83d5b90f305d708c4e825d646acf3fe60e4a9"
     },
     "shared_contracts/assembly_detail/verify.py": {
-      "sha256": "b2677520ecaa6b91bb98995c1ef13cbc39fb15574a4ced2b80c927ea1be28ef8"
+      "sha256": "c55510b4649b8d523042b6983d5c123e3d37fbfd009071873ddf3bb2e3506ab1"
     },
     "shared_contracts/assembly_preview/__init__.py": {
-      "sha256": "e399a7b316a13e8f06408c3b73441584d57c918b6489ed2bed6d1710038c22ad"
+      "sha256": "fa05a7c56db8030239b0765b82ff75ae0a8ddba50bf1cbd6b4b145918d327562"
     },
     "shared_contracts/assembly_preview/manifest.py": {
-      "sha256": "f8463be37d1a31f8ce5258b9b91620dfdc88266452318fc0c28956c023e62c65"
+      "sha256": "033322529cde35401f61b6eb006dd411552a85c8249086feeea02c0eb5643803"
     },
     "shared_contracts/assembly_preview/package.py": {
-      "sha256": "54ac77fb60e330999549dac8761edb014238fb068204712a455175294ac77867"
+      "sha256": "a5582ca862ac865ff9488add1c8a309e18b6acbdac477bea09d64f85d22c968d"
     },
     "shared_contracts/assembly_preview/scene.py": {
       "sha256": "fddef5c34c7c52e4f729fe42a0e9ed7d19d4bbfba86b67cf430e1dabc7898289"
     },
     "shared_contracts/assembly_preview/validation.py": {
-      "sha256": "45bd58a26320dd9ac7c8f0dfa501eea5a21886148953770c54200014126c13ef"
+      "sha256": "c8026b68b7918d8be440fea6808b684105a1b0a16bd1b6151a8699d3af82922d"
     },
     "shared_contracts/base.py": {
       "sha256": "2cffc8c1044d73b4523a00f87e680204cae8068134f38c71a4fe7a8265e8570a"

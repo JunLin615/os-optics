@@ -20,6 +20,8 @@ Python::
     scene_summary("run")                             # the same facts as a dict: parts by class, bounding boxes, beams
     view_assembly(preview)                           # a verified AssemblyPreviewPackageV1, served from memory only
     render_snapshots(preview, "assembly-shots")      # snapshots of the assembly (derived images; the package is not written)
+    package_view_scene("preview.zip")                # a package on disk, verified, its parts coloured by its layout check
+    plan_view_scene(revision, context, finding_id=...)   # a local assembly plan revision: projected, checked, coloured
 
 What you see: every part exactly where the run or the package puts it (frame, millimetres, +Z up), coloured by class
 (optics, mounts, stages, posts, post holders, bases, breadboard, your own hardware), with outlines; beams in their
@@ -38,7 +40,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .assembly import AssemblyViewError, assembly_view_scene
+from .assembly import AssemblyViewError, assembly_view_scene, part_check_status
 from .model import (
     ASSEMBLY_VIEW,
     OPTICAL_VIEW,
@@ -92,6 +94,57 @@ def render_snapshots(source: SceneSource, out_dir: str | Path, *, views=DEFAULT_
                            background=background, size_mode=size_mode)
 
 
+def package_view_scene(source: Any, *, checks: bool = True, focus_items: Any = None) -> ViewerScene:
+    """The Experimental Lab Assembly of an Assembly Preview Package from any source ``os_optics.assembly`` accepts (a
+    ``.zip`` archive, a package directory, bytes, a file map or a verified package), verified first; with ``checks`` its
+    parts are coloured by the package's local layout check (``validate_assembly_layout``). No token, no network."""
+
+    from ..assembly import AssemblyPreviewPackageError, load_assembly_preview, validate_assembly_layout
+
+    try:
+        package = load_assembly_preview(source)
+    except AssemblyPreviewPackageError as exc:
+        raise ViewerInputError("not a verifiable assembly preview package: " + "; ".join(exc.problems[:3])) from None
+    validation = validate_assembly_layout(package) if checks else None
+    return assembly_view_scene(package, validation=validation, focus_items=focus_items)
+
+
+def plan_view_scene(revision: Any, context: Any, *, findings: Any = None, validation: Any = None, finding_id: str | None = None,
+                    focus_items: Any = None) -> ViewerScene:
+    """The Experimental Lab Assembly of one local assembly plan revision (``os_optics.assembly_plan``): its LOCAL_PLAN
+    preview package (projected here, in memory), coloured by the package's layout check and the plan's findings
+    (``findings``, default the revision's recorded ones; each names its part or pair by item id = part ref).
+    ``finding_id`` highlights and frames that finding's parts; ``focus_items`` names parts directly. Nothing is
+    written; no token, no network."""
+
+    from ..assembly import validate_assembly_layout
+    from ..assembly_plan.projection import project_plan, design_bom_lines
+
+    projection = project_plan(revision, context)
+    package = projection.package
+    if validation is None or validation.package.package_content_hash != package.content_hash:
+        validation = validate_assembly_layout(package)
+    plan_findings = tuple(revision.findings if findings is None else findings)
+    focus = set(focus_items or ())
+    if finding_id is not None:
+        finding = next((f for f in plan_findings if f.finding_id == finding_id), None)
+        if finding is None:
+            raise ViewerInputError(f"the plan has no finding {finding_id}")
+        parts = set(projection.parts)
+        focus |= {ref for ref in finding.item_ids if ref in parts}
+        if not focus:
+            raise ViewerInputError(f"finding {finding_id} names no part of the assembly view ({', '.join(finding.item_ids) or 'the whole plan'})")
+    _, supply, _ = design_bom_lines(context.design_bom)
+    return assembly_view_scene(package, validation=validation, findings=plan_findings, focus_items=focus,
+                               supply={ref: supply[ref] for ref in projection.parts if ref in supply})
+
+
+def view_plan(revision: Any, context: Any, *, open_browser: bool = True, port: int = 0, **options: Any) -> ViewerServer:
+    """Open a local assembly plan revision's assembly in a local browser page (``plan_view_scene`` options)."""
+
+    return serve_view(plan_view_scene(revision, context, **options), open_browser=open_browser, port=port)
+
+
 def serve_view(scene: ViewerScene, *, open_browser: bool = True, port: int = 0) -> ViewerServer:
     """Serve one scene's page from memory on 127.0.0.1; optionally open it in the default browser."""
 
@@ -141,12 +194,16 @@ __all__ = [
     "focus_frame",
     "load_view",
     "optical_view_scene",
+    "package_view_scene",
+    "part_check_status",
+    "plan_view_scene",
     "render_snapshots",
     "scene_summary",
     "serve_view",
     "snapshot_images",
     "view_assembly",
     "view_document",
+    "view_plan",
     "view_run",
     "write_view_html",
 ]

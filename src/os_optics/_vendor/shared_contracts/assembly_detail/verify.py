@@ -8,6 +8,10 @@ measured value, the axis height equals the scene's, and every INSERTION_DEPTH se
 dimension. It returns every problem found and never raises on malformed input. ``load_assembly_detail`` raises
 ``AssemblyDetailPackageError`` instead and returns the verified pair with the measured values.
 
+A preview package with the LOCAL_PLAN binding (preview manifest 3.1) takes a 3.2 supplement: ``build_assembly_detail``
+copies its local plan revision into the binding (release ``LOCAL_PLAN``), and the verifier compares it field by field
+with the manifest as it compares the commercial resolution id and the Customer Purchase BOM of a 3.1 supplement.
+
 Measurement uses the preview's poses only (``x_world = R(q) x_local + position_mm``, the quaternion normalized as
 the renderer does); there is no second pose authority.
 """
@@ -33,7 +37,6 @@ from ..assembly_preview.scene import (
     SupportRelationV1,
 )
 from .detail import (
-    ASSEMBLY_DETAIL_SCHEMA_VERSION,
     AXIS_INDEX,
     MAX_DETAIL_BYTES,
     AssemblyDetailPackageV1,
@@ -46,7 +49,10 @@ from .detail import (
     MeasureAxisV1,
     PointKindV1,
     PointRefV1,
+    ReleaseBasisV1,
     detail_content_hash_of,
+    detail_schema_version_for,
+    detail_usage_terms_for,
 )
 
 #: Agreement required between a measured dimension and the scene value it must reproduce (mm).
@@ -105,23 +111,31 @@ def build_assembly_detail(
     line_display_names_zh_cn: Mapping[str, str] | None = None,
 ) -> AssemblyDetailPackageV1:
     """Bind ``dimensions`` (and the catalog models of customer-supplied components) to ``preview`` (binding copied from
-    the verified preview manifest, never from a caller), hash, and verify the result against the same preview. Raises
+    the verified preview manifest, never from a caller), hash, and verify the result against the same preview. A
+    LOCAL_PLAN preview takes a 3.2 supplement whose ``release`` basis is ``LOCAL_PLAN``. Raises
     ``AssemblyDetailPackageError``."""
 
     manifest = preview.manifest
     source = manifest.binding
-    if source.commercial_resolution_id is None or source.commercial_bom is None:
-        raise AssemblyDetailPackageError(("only a preview package bound to a commercial resolution and its "
-                                          "Customer Purchase BOM can be supplemented",))
-    binding = DetailBindingV1(project=source.project, local_validation_hash=source.local_validation_hash,
-                              commercial_resolution_id=source.commercial_resolution_id,
-                              commercial_bom=source.commercial_bom,
-                              preview_package_content_hash=manifest.package_content_hash,
-                              preview_package_revision=manifest.package_revision)
+    if source.local:
+        if release.basis is not ReleaseBasisV1.LOCAL_PLAN:
+            raise AssemblyDetailPackageError(("the supplement of a locally generated preview package is released LOCAL_PLAN",))
+        binding = DetailBindingV1(project=source.project, local_validation_hash=source.local_validation_hash,
+                                  local_plan=source.local_plan, preview_package_content_hash=manifest.package_content_hash,
+                                  preview_package_revision=manifest.package_revision)
+    else:
+        if source.commercial_resolution_id is None or source.commercial_bom is None:
+            raise AssemblyDetailPackageError(("only a preview package bound to a commercial resolution and its "
+                                              "Customer Purchase BOM, or to a local assembly plan, can be supplemented",))
+        binding = DetailBindingV1(project=source.project, local_validation_hash=source.local_validation_hash,
+                                  commercial_resolution_id=source.commercial_resolution_id,
+                                  commercial_bom=source.commercial_bom,
+                                  preview_package_content_hash=manifest.package_content_hash,
+                                  preview_package_revision=manifest.package_revision)
     content = {
         "schema": "opensci.assembly_detail.package",
-        "schema_version": ASSEMBLY_DETAIL_SCHEMA_VERSION,
-        "usage": AssemblyDetailPackageV1.model_fields["usage"].default.model_dump(mode="json", by_alias=True),
+        "schema_version": detail_schema_version_for(binding),
+        "usage": detail_usage_terms_for(binding).model_dump(mode="json", by_alias=True),
         "binding": binding.model_dump(mode="json", by_alias=True, exclude_none=True),
         "release": release.model_dump(mode="json", by_alias=True, exclude_none=True),
         "dimensions": [d.model_dump(mode="json", by_alias=True, exclude_none=True) for d in dimensions],
@@ -329,6 +343,7 @@ def _binding_problems(binding: DetailBindingV1, preview: AssemblyPreviewPackageV
         ("Local Validation hash", binding.local_validation_hash, source.local_validation_hash),
         ("commercial resolution id", binding.commercial_resolution_id, source.commercial_resolution_id),
         ("Customer Purchase BOM", binding.commercial_bom, source.commercial_bom),
+        ("local plan", binding.local_plan, source.local_plan),
         ("preview package content hash", binding.preview_package_content_hash, preview.manifest.package_content_hash),
         ("preview package revision", binding.preview_package_revision, preview.manifest.package_revision),
     ):
@@ -377,7 +392,8 @@ def verify_assembly_detail(
     problems.extend(_completeness_problems(detail, scene))
     problems.extend(_supplied_model_problems(detail, scene))
     lines = {p.commercial_line_ref for p in scene.parts if p.commercial_line_ref is not None}
-    problems.extend(f"line display name {key!r} names no Customer Purchase BOM line of the bound scene"
+    bom = "design BOM" if detail.binding.local else "Customer Purchase BOM"
+    problems.extend(f"line display name {key!r} names no {bom} line of the bound scene"
                     for key in sorted(set(detail.line_display_names_zh_cn) - lines))
     return tuple(problems)
 

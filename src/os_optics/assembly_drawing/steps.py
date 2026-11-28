@@ -84,13 +84,17 @@ class Step:
 
 class Words:
     """The catalog in one locale; on the customer's own optical table (``table``) a key's ``<key>_table`` wording is used
-    where the catalog has one (no "breadboard" / "board" for a drawing without one)."""
+    where the catalog has one (no "breadboard" / "board" for a drawing without one); for the drawing of a local assembly
+    plan (``local``) a key's ``<key>_local`` wording comes first ("your design", design BOM lines)."""
 
-    def __init__(self, locale: str, *, table: bool = False) -> None:
+    def __init__(self, locale: str, *, table: bool = False, local: bool = False) -> None:
         self.locale = locale
         self.table = table
+        self.local = local
 
     def _key(self, key: str) -> str:
+        if self.local and CATALOG.has(f"{key}_local"):
+            return f"{key}_local"
         return f"{key}_table" if self.table and CATALOG.has(f"{key}_table") else key
 
     def __call__(self, key: str, **values: object) -> str:
@@ -99,6 +103,12 @@ class Words:
     def enum(self, prefix: str, value: str) -> str:
         key = self._key(f"{prefix}.{value}")
         return CATALOG.text(self.locale, key) if CATALOG.has(key) else CATALOG.enum(self.locale, prefix, value)
+
+
+def words_for(facts, locale: str) -> Words:  # noqa: ANN001 - model.DrawingFacts
+    """The words of one drawing: on the customer's own table, and for a local assembly plan's package, their variants."""
+
+    return Words(locale, table=facts.board.customer_table, local=facts.preview.manifest.binding.local)
 
 
 @dataclass(frozen=True)
@@ -442,7 +452,7 @@ def assembly_steps(facts: DrawingFacts, locale: str = "en") -> list[Step]:
     operations, its delivered adjustments) in compact wording -- each dimension stays in the dimension table and on the
     views; a step repeats only its optic's placement and every nominal value."""
 
-    w = Words(locale, table=facts.board.customer_table)
+    w = words_for(facts, locale)
     scene = facts.scene
     compact = len(facts.chains) > 1
     parts = [_part_step(facts, p, w, compact=compact) for p in facts.parts]
@@ -466,7 +476,7 @@ def dof_rows(facts: DrawingFacts, locale: str = "en") -> list[tuple[str, str, st
     """(axis label, delivery, detail, highlighted) of every DOF implementation, for the sheet's adjustments table
     (``highlighted``: a fixed axis or a nominal travel)."""
 
-    w = Words(locale, table=facts.board.customer_table)
+    w = words_for(facts, locale)
     rows = []
     for dof in facts.scene.dof_implementations:
         label = w("dof.label", axis=dof.axis.value, instance=safe(dof.design_instance_id))
