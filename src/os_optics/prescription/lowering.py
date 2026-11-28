@@ -7,8 +7,8 @@ Grouping (in surface order; the medium before the first and after the last surfa
   gap; it becomes a ``SURFACE_SEQUENCE`` model (surfaces ``S1`` .. in order, ``media`` the intervening glasses and any
   vacuum gaps, vertex positions relative to the first vertex, every surface traced ``TRANSMITTED``). Vacuum between
   separate compound members cannot be represented by the native model, whose inter-member space is Project air;
-* a surface with air on both sides that is the **stop** becomes an ``APERTURE_STOP`` model: an opaque plate in the
-  surface's plane with a circular opening of the clear semi-diameter;
+* a mirror in air becomes a one-face sequence that traces the reflected branch. Its local +Z axis faces the incident
+  light. An explicit circular aperture or stop on an air plane becomes an opaque plate with the prescribed opening;
 * any other surface with air on both sides (a dummy or reference surface) has no optical effect and is not a member: its
   spacing simply continues to the next surface (reported);
 * a stop on a refracting surface is that surface's clear aperture (reported).
@@ -23,11 +23,10 @@ of its glass (``SurfaceSequenceModelV1.held_sag_at``). An aperture stop's plate 
 largest outline radius of the unit, reduced where a neighbouring element's surface would reach the plate's plane (a
 plate never overlaps an element), and never smaller than the opening.
 
-The unit (``COMPOUND``) frame: origin at the first surface's vertex, +Z along the optical axis (the direction light
-travels). Each member is placed at its first vertex (an aperture stop: its plane) by a pure translation along +Z, the
-sum of the spacings before it. ``envelope`` is the cylinder about the axis covering every member's body (outline radius
-and the full sag of every surface out to the outline, rounded outward to 1e-6 mm); the ports are ``IN`` at the
-envelope's front face and ``OUT`` at its rear face, both along +Z.
+The unit origin is the first surface vertex. Signed spacings accumulate along the fixed Z axis. Mirrors reverse the
+propagation direction. Member poses preserve the world-space sag and orient reflecting surfaces toward the incident
+light. The cylinder envelope covers each member's body, rounded outward to 1e-6 mm. Its input and output ports point
+along the initial and final propagation directions.
 
 Checks (each refusal names the rows / surfaces): the native surface model's own checks (profile domain over the clear
 aperture, consecutive surfaces not meeting inside their common clear aperture -- the contract's messages), every surface's
@@ -45,7 +44,7 @@ ratio. An edge thickness between the review ratio (0.35 by default, ``edge_revie
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, Context, Decimal, localcontext
 
 from pydantic import ValidationError
@@ -107,6 +106,7 @@ class _Group:
     z: list[Decimal]
     media: list[str] = field(default_factory=list)
     member_id: str = ""
+    axis_sign: int = 1  # orientation of the member's local +Z axis in the prescription frame
     edge: Decimal = Decimal(0)
     edge_basis: str = ""
     model: object | None = None
@@ -198,7 +198,7 @@ def _held(group: _Group, index: int, rho: Decimal, along) -> Decimal | None:
     (``SurfaceSequenceModelV1.held_sag_at``); ``None`` outside the profile's domain."""
 
     try:
-        return group.model.held_sag_at(index, *_point(rho, along))  # type: ignore[union-attr]
+        return group.axis_sign * group.model.held_sag_at(index, *_point(rho, along))  # type: ignore[union-attr]
     except ValueError:
         return None
 
@@ -230,7 +230,8 @@ def _profile(surface: IrSurface, surface_id: str, vertex_z: Decimal, coating_id:
         aspheric_coefficients=tuple(_s(a) for a in surface.aspheric_mm) or None, cylinder_axis=surface.cylinder_axis,
         linear_sag_coefficient=_s(surface.linear_sag) if surface.linear_sag is not None else None, sag=_sag_document(surface.sag),
         clear_radius_mm=_s(surface.clear_semi_diameter_mm), edge_radius_mm=_s(edge) if edge is not None else None,
-        coating_id=coating_id, traced="TRANSMITTED", status=FactStatus.SPECIFIED,
+        holes=({"center_mm": ("0", "0"), "radius_mm": _s(surface.hole_radius_mm)},) if surface.hole_radius_mm else None,
+        coating_id=coating_id, traced="REFLECTED" if surface.is_mirror else "TRANSMITTED", status=FactStatus.SPECIFIED,
     )
 
 
@@ -266,7 +267,35 @@ class _Lowering:
         groups: list[_Group] = []
         before = AIR
         current: _Group | None = None
+        direction = 1
+        previous_optical_z = None
         for surface, position in zip(surfaces, z):
+            if surface.is_mirror or before not in (AIR, VACUUM) or surface.material is not None:
+                # Reference planes and the open centre of a stop may have reversed vertex order.
+                # Actual interfaces must be encountered in the direction set by the last reflection.
+                if previous_optical_z is not None and direction * (position - previous_optical_z) < 0:
+                    self.problems.add(E.SURFACE_ORDER_INVALID, f"surface {surface.label} reverses the propagation order of the optical "
+                                      "interfaces. Check the signed spacings and reflection records.", surface.location)
+                    return []
+                previous_optical_z = position
+            if surface.is_mirror:
+                if before != AIR or surface.material is not None:
+                    self.problems.add(E.UNSUPPORTED_FEATURE, "an immersed or back-silvered mirror needs its substrate and return path",
+                                      surface.location)
+                    continue
+                # A native mirror reflects on its local +Z side. A half turn about Y reverses both
+                # its local z and its sag so the world profile remains the one in the source.
+                mirror = surface
+                if direction == 1:
+                    if surface.sag is not None:
+                        self.problems.add(E.UNSUPPORTED_FEATURE, "a flipped mirror with a two-variable sag is not supported", surface.location)
+                        continue
+                    mirror = replace(surface, radius_mm=-surface.radius_mm if surface.radius_mm else None,
+                                     aspheric_mm=tuple(-a for a in surface.aspheric_mm),
+                                     linear_sag=-surface.linear_sag if surface.linear_sag else None)
+                direction = -direction
+                groups.append(_Group("MIRROR", [mirror], [position], axis_sign=direction))
+                continue
             after = self.medium(surface)
             if before != after and before in (AIR, VACUUM) and after in (AIR, VACUUM):
                 self.problems.add(E.UNSUPPORTED_FEATURE, f"surface {surface.label} changes a gap from {before} to {after} "
@@ -280,13 +309,13 @@ class _Lowering:
                     self.problems.add(E.UNSUPPORTED_FEATURE, f"a coated surface with {before.lower()} on both sides ({what}) is not imported; "
                                       "leave the coating blank, or give the substrate as glass between two surfaces",
                                       surface.location.at("coating"))
-                elif surface.is_stop:
+                elif surface.is_stop or surface.has_clear_aperture:
                     if before == VACUUM and current is not None:
                         self.problems.add(E.UNSUPPORTED_FEATURE, f"aperture stop {surface.label} inside an evacuated gap cannot be a "
                                           "separate member: the inter-member medium is Project air; place the stop outside the "
                                           "vacuum cell", surface.location.at("stop"))
                     else:
-                        groups.append(_Group("STOP", [surface], [position]))
+                        groups.append(_Group("STOP", [surface], [position], axis_sign=direction))
                 else:
                     self.dummies += 1
                     self.warnings.append(ImportWarning(
@@ -307,6 +336,11 @@ class _Lowering:
                 current.z.append(position)
                 current.media.append(before)
             if after == AIR:
+                if current is not None and direction < 0:
+                    # A transmitting member stores faces and media in physical +Z order, even on a return pass.
+                    current.surfaces.reverse()
+                    current.z.reverse()
+                    current.media.reverse()
                 current = None  # another lens now starts in Project air, never across an inter-member vacuum gap
             if surface.is_stop and not (before == after and before in (AIR, VACUUM)):
                 self.assumptions.append(f"The aperture stop is surface {surface.label}'s clear aperture (radius "
@@ -324,6 +358,8 @@ class _Lowering:
         stops = [g for g in groups if g.kind == "STOP"]
         for number, group in enumerate(lenses, start=1):
             group.member_id = f"{LENS_MEMBER_PREFIX}{number}"
+        for number, group in enumerate((g for g in groups if g.kind == "MIRROR"), start=1):
+            group.member_id = f"M{number}"
         for number, group in enumerate(stops, start=1):
             group.member_id = STOP_MEMBER if len(stops) == 1 else f"{STOP_MEMBER}{number}"
         if len(groups) > MAX_COMPOUND_MEMBERS:
@@ -414,7 +450,8 @@ class _Lowering:
                 refusal = (message, location)
             # A surface with a smaller clear semi-diameter can fall back from its window's outline to its clear edge.
             # Keep the original finding if no such edge makes the geometry valid.
-            derivable = {i for i in involved if i not in group.derived_edges and group.surfaces[i].mechanical_semi_diameter_mm is None
+            derivable = {i for i in involved if i not in group.derived_edges
+                         and (group.surfaces[i].mechanical_semi_diameter_mm is None or group.surfaces[i].automatic_mechanical_edge)
                          and group.surfaces[i].clear_semi_diameter_mm < default_edges[i]}
             if not derivable:
                 self.problems.add(E.EDGE_INVALID, *refusal)
@@ -565,9 +602,14 @@ class _Lowering:
         z = neighbour.z[surface_index]
         plane = stop.z[0]
         limit = min(reach, neighbour.model.glass_outline_mm(surface_index)[0])  # type: ignore[union-attr]
+        opening = stop.surfaces[0].clear_semi_diameter_mm
+        if limit < opening:
+            return None
+        # Glass may protrude through the hole. Only the annulus from the opening to the plate's
+        # edge has material which can overlap the neighbouring optic. Include the inner rim itself.
         previous = Decimal(0)
         with localcontext(DECIMAL_CONTEXT):
-            for rho in _samples(limit):
+            for rho in (opening + offset for offset in _samples(limit - opening)):
                 for along_y in _directions(neighbour):
                     sag = _held(neighbour, surface_index, rho, along_y)
                     surface_z = z + sag  # type: ignore[operator]
@@ -580,6 +622,10 @@ class _Lowering:
         surface = group.surfaces[0]
         opening = surface.clear_semi_diameter_mm
         mechanical = surface.mechanical_semi_diameter_mm
+        if surface.automatic_mechanical_edge and mechanical == opening:
+            # A computed outline equal to the opening describes no plate material. Derive the
+            # mounting extent from the surrounding assembly as for a stop without a stated edge.
+            mechanical = None
         if mechanical is not None and mechanical < opening:
             self.problems.add(E.EDGE_INVALID, f"mech_semi_diameter {_s(mechanical)} mm is smaller than the stop opening {_s(opening)} mm",
                               surface.location.at("mech_semi_diameter"))
@@ -590,8 +636,8 @@ class _Lowering:
             return
         reach = mechanical if mechanical is not None else max(unit_edge, opening)
         edge = reach
-        neighbours = [(groups[index - 1], False)] if index > 0 and groups[index - 1].kind == "LENS" else []
-        neighbours += [(groups[index + 1], True)] if index + 1 < len(groups) and groups[index + 1].kind == "LENS" else []
+        neighbours = [(groups[index - 1], group.axis_sign < 0)] if index > 0 and groups[index - 1].kind != "STOP" else []
+        neighbours += [(groups[index + 1], group.axis_sign > 0)] if index + 1 < len(groups) and groups[index + 1].kind != "STOP" else []
         for neighbour, after in neighbours:
             clear = self.clearance(group, neighbour, after, reach)
             if clear is None:
@@ -610,6 +656,10 @@ class _Lowering:
             self.assumptions.append(f"Aperture stop {surface.label}: plate radius {_s(edge)} mm ({group.edge_basis}); give "
                                     "mech_semi_diameter on the stop row to set it.")
         if edge == opening:
+            if self.rx.source_format in {".zmx", ".seq", ".len"}:
+                self.problems.add(E.EDGE_INVALID, f"aperture {surface.label} needs a plate outline larger than its "
+                                  f"{_s(opening)} mm opening. Supply a mechanical radius for the opaque rim.", surface.location)
+                return
             self.warnings.append(ImportWarning(
                 "STOP_PLATE_AT_OPENING", f"aperture stop {surface.label}: the plate radius equals the opening ({_s(opening)} mm), so the "
                 "stop blocks no light; give a larger mech_semi_diameter on the stop row", surface.location))
@@ -619,6 +669,38 @@ class _Lowering:
             self.problems.add(E.MODEL_INVALID, f"aperture stop {surface.label}: {_contract_message(exc)}", surface.location)
 
     # --- the unit
+
+    def check_folded_path(self, groups: list[_Group], image_vertex_z: Decimal) -> None:
+        """A native scene encounters each body wherever the ray travels, including an unlisted return pass."""
+        mirrors = [g for g in groups if g.kind == "MIRROR"]
+        if not mirrors:
+            return
+        if len(mirrors) > 2:
+            self.problems.add(E.UNSUPPORTED_FEATURE, "three or more reflections require explicit multi-pass encounter mapping",
+                              mirrors[2].surfaces[0].location)
+            return
+        infinity = Decimal("Infinity")
+        obj = self.rx.object
+        start = -obj.distance_mm if obj and obj.distance_mm is not None else -infinity
+        final_gap = self.rx.surfaces[-1].thickness_mm
+        end = image_vertex_z + final_gap if final_gap is not None else (-infinity if len(mirrors) % 2 else infinity)
+        primary = mirrors[0]
+        if len(mirrors) == 2 and end >= primary.z[0] and not primary.surfaces[0].hole_radius_mm:
+            self.problems.add(E.UNSUPPORTED_FEATURE, "the outgoing leg reaches the solid primary mirror. A coaxial beam "
+                              "returning through the primary requires a declared central opening.", primary.surfaces[0].location)
+            return
+        vertices = [start, *(g.z[0] for g in mirrors), end]
+        leg = 0
+        for group in groups:
+            if group.kind == "MIRROR":
+                leg += 1
+                continue
+            lo, hi = min(group.z), max(group.z)
+            for i, (a, b) in enumerate(zip(vertices, vertices[1:])):
+                if i != leg and lo <= max(a, b) and hi >= min(a, b):
+                    self.problems.add(E.UNSUPPORTED_FEATURE, f"surface {group.surfaces[0].label} also lies on propagation leg {i + 1}. "
+                                      "This folded prescription needs an explicit multi-pass encounter model.", group.surfaces[0].location)
+                    return
 
     def envelope(self, groups: list[_Group]) -> CylinderGeometryV1:
         radius = max(g.edge for g in groups)
@@ -634,6 +716,10 @@ class _Lowering:
                             z_values.append(z + _held(group, index, rho, along_y))  # type: ignore[operator]
             low = min(z_values).quantize(ENVELOPE_QUANTUM, rounding=ROUND_FLOOR)
             high = max(z_values).quantize(ENVELOPE_QUANTUM, rounding=ROUND_CEILING)
+            if high == low:
+                # A lone planar mirror or aperture has zero axial extent. Its display envelope needs a finite span.
+                low -= ENVELOPE_QUANTUM
+                high += ENVELOPE_QUANTUM
         return CylinderGeometryV1(diameter_mm=_s(radius * 2), z_min_mm=_s(low), z_max_mm=_s(high), status=FactStatus.DERIVED)
 
     def display_name(self, text: str, suffix: str = "") -> str:
@@ -645,14 +731,20 @@ class _Lowering:
     def lower(self) -> LoweredUnit | None:
         z = self.positions()
         groups = self.groups(z)
+        obj = self.rx.object
+        if groups and obj and obj.distance_mm is not None and obj.distance_mm > 0 and self.rx.source_format in {".seq", ".len", ".zmx"}:
+            if groups[0].z[0] < -obj.distance_mm:
+                self.problems.add(E.SURFACE_ORDER_INVALID, "the first physical optic lies behind the stated real object. "
+                                  "Check the signed spacings of the intervening reference planes.", groups[0].surfaces[0].location)
+        self.check_folded_path(groups, z[-1])
         if self.problems:
             return None
         for group in groups:
-            if group.kind == "LENS":
+            if group.kind != "STOP":
                 self.element(group)
         if self.problems:
             return None
-        lenses = [g for g in groups if g.kind == "LENS"]
+        lenses = sorted((g for g in groups if g.kind != "STOP"), key=lambda g: g.z[0])
         for front, back in zip(lenses, lenses[1:]):
             self.facing(front, back)
         if self.problems:
@@ -671,7 +763,7 @@ class _Lowering:
             model_id = f"{self.model_id}-{group.member_id}"
             rows = group.rows
             row_text = f"row {rows[0]}" if len(rows) == 1 else f"rows {rows[0]}-{rows[-1]}"
-            what = "aperture stop" if group.kind == "STOP" else ("vacuum cell" if VACUUM in group.media else
+            what = "aperture stop" if group.kind == "STOP" else "mirror" if group.kind == "MIRROR" else ("vacuum cell" if VACUUM in group.media else
                                                                  "cemented element" if len(group.surfaces) > 2 else "element")
             try:
                 models.append(ProjectOpticalModelV1(
@@ -683,7 +775,8 @@ class _Lowering:
                                   group.surfaces[0].location)
                 continue
             members.append(CompoundMemberV1(member_id=group.member_id, model_id=model_id,
-                                            pose=PoseV1(position_mm=(0.0, 0.0, float(group.z[0])), quaternion_wxyz=(1.0, 0.0, 0.0, 0.0))))
+                                            pose=PoseV1(position_mm=(0.0, 0.0, float(group.z[0])),
+                                                        quaternion_wxyz=(1, 0, 0, 0) if group.axis_sign == 1 else (0, 0, 1, 0))))
             entry = {"member_id": group.member_id, "model_id": model_id, "model_kind": "APERTURE_STOP" if group.kind == "STOP" else "SURFACE_SEQUENCE",
                      "surfaces": [s.label for s in group.surfaces], "rows": rows, "z_mm": _s(group.z[0]),
                      "edge_radius_mm": _s(group.edge), "edge_basis": group.edge_basis}
@@ -700,9 +793,12 @@ class _Lowering:
         if self.problems:
             return None
         envelope = self.envelope(groups)
+        reflected_output = sum(surface.is_mirror for surface in self.rx.surfaces) % 2 == 1
+        output_axis = ("0", "0", "-1") if reflected_output else AXIS
+        output_z = envelope.z_min_mm if reflected_output else envelope.z_max_mm
         ports = (
             FramePortV1(port_id="IN", role="INPUT", point_mm=("0", "0", envelope.z_min_mm), direction=AXIS, status=FactStatus.DERIVED),
-            FramePortV1(port_id="OUT", role="OUTPUT", point_mm=("0", "0", envelope.z_max_mm), direction=AXIS, status=FactStatus.DERIVED),
+            FramePortV1(port_id="OUT", role="OUTPUT", point_mm=("0", "0", output_z), direction=output_axis, status=FactStatus.DERIVED),
         )
         try:
             compound = ProjectOpticalModelV1(
@@ -716,15 +812,18 @@ class _Lowering:
         last = self.rx.surfaces[-1]
         if self.rx.image is not None and last.thickness_mm is not None:
             image_z = EXACT.add(z[-1], last.thickness_mm)
-            if last.thickness_mm < 0:
+            if last.thickness_mm != 0 and (last.thickness_mm < 0) != reflected_output:
                 self.warnings.append(ImportWarning(
-                    "IMAGE_BEFORE_LAST_SURFACE", f"the last thickness {_s(last.thickness_mm)} mm is negative: the image plane (z = "
-                    f"{_s(image_z)} mm) lies before the last surface (a virtual image); it is reported, not placed",
+                    "IMAGE_BEFORE_LAST_SURFACE", f"the final spacing {_s(last.thickness_mm)} mm places a virtual image at z = "
+                    f"{_s(image_z)} mm along the backward extension of the outgoing ray",
                     last.location.at("thickness")))
         counts = {"surfaces": len(self.rx.surfaces), "elements": len(lenses),
                   "cemented_elements": sum(1 for g in lenses if any(a not in (AIR, VACUUM) and b not in (AIR, VACUUM)
                                                                 for a, b in zip(g.media, g.media[1:]))),
                   "aperture_stops": sum(1 for g in groups if g.kind == "STOP"), "dummy_surfaces": self.dummies, "members": len(groups)}
+        mirror_count = sum(g.kind == "MIRROR" for g in lenses)
+        if mirror_count:
+            counts["mirrors"] = mirror_count
         return LoweredUnit(models=(compound, *models), compound_id=self.model_id, members=tuple(report),
                            assumptions=tuple(self.assumptions), warnings=tuple(self.warnings), image_plane_z_mm=image_z, counts=counts)
 

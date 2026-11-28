@@ -22,6 +22,7 @@ from .configuration import (
     fixed_dof_motions,
 )
 from .detection import DetectionV1, LockInV1, ModulationV1
+from .system_aperture import SystemApertureV1
 from .detector import (
     CharacterizationSourceV1,
     DetectorElectricalV1,
@@ -332,6 +333,7 @@ __all__ = [
     "OPTICAL_WORKSPACE_SCHEMA_VERSION",
     "ProjectDispersionV1",
     "ProjectDocumentV2",
+    "SystemApertureV1",
     "ProjectModelMaterialV1",
     "PropagationEnvironmentV1",
     "DEFAULT_ENVIRONMENT",

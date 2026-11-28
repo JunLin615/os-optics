@@ -1705,6 +1705,9 @@ print(run.status.value, run.catalog_version, [e["optical_model_id"] for e in run
 
 ### Import, build, inspect and export
 
+* **Trace a system aperture.** `os-optics project pupil objective.json --source SRC1 --sample 0 0 --sample 0 .999`
+  traces the field center and a near-rim ray through the saved surfaces. Select a zoom state with `--configuration ID`.
+  See [System aperture analysis and ray sampling](SYSTEM_APERTURE.md) for the four definitions and the Python API.
 * **Import a lens prescription.** `os-optics project import-prescription design.csv --model-id objective --into
   project.json --instance-id OBJ --out project.json` reads a `csv-surface-table/1` surface table (radius, thickness,
   glass, semi-diameters, stop, conic and aspheric terms; mm, cm, m or inch) and adds one `COMPOUND` unit with an element

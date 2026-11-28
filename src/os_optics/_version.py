@@ -214,7 +214,8 @@
 # tables, spectral bulk loss and Schott dn/dT; and a native Project operates in its stated environment (air at a
 # temperature and pressure, default 20 C and 101325 Pa; VACUUM gaps), so a native Project's Engine input states its air and
 # every native Engine input hash moves (Engine schema 1.12.0, materials model 1.1).
-__version__ = "0.14.0"
+# 0.15.0 adds native sequential prescription import and operational system aperture declarations.
+__version__ = "0.15.0"
 ENGINE_VERSION = __version__
 
 # The PyPI distribution this package is published as (``importlib.metadata.distribution(DISTRIBUTION_NAME)``; the import

@@ -1,0 +1,586 @@
+{
+  "catalog_version": "2026-01-01.2",
+  "categories_offered": [
+    "MIRROR"
+  ],
+  "coatings": [
+    {
+      "aoi_reference": "AIR_EQUIVALENT",
+      "bands": [
+        {
+          "max_nm": "1100",
+          "min_nm": "400",
+          "reflectance": "0.99",
+          "status": "DESIGN_BASIS",
+          "transmittance": "0"
+        }
+      ],
+      "basis": "Synthetic development coating.",
+      "coating_id": "DIELECTRIC_HIGH_REFLECTOR.400-1100R0.99T0.AOI0-45",
+      "display_name": "HR 400-1100 nm",
+      "kind": "DIELECTRIC_HIGH_REFLECTOR",
+      "valid_aoi_deg": {
+        "max_deg": "45",
+        "min_deg": "0",
+        "status": "SPECIFIED"
+      }
+    }
+  ],
+  "materials": [
+    {
+      "material_id": "SCHOTT_BAF52",
+      "display_name": "BAF52",
+      "dispersion": {
+        "b": [
+          "1.41632142",
+          "0.11733119",
+          "0.934114782"
+        ],
+        "c_um2": [
+          "0.00928783144",
+          "0.044991015",
+          "114.125561"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "BAF52",
+        "catalogue_tags": [
+          "SCHOTT"
+        ],
+        "source_edition": "2018-06-01",
+        "manufacturer": "SCHOTT"
+      }
+    },
+    {
+      "material_id": "MISC_CAF2",
+      "display_name": "CAF2",
+      "dispersion": {
+        "b": [
+          "0.5675888",
+          "0.4710914",
+          "3.8484723"
+        ],
+        "c_um2": [
+          "0.00252643",
+          "0.010078333",
+          "1200.556"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Handbook of Optics Vol. II. Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "CAF2",
+        "catalogue_tags": [
+          "MISC"
+        ],
+        "source_edition": "undated"
+      }
+    },
+    {
+      "material_id": "INFRARED_CAF2",
+      "display_name": "CAF2",
+      "dispersion": {
+        "b": [
+          "0.5675888",
+          "0.4710914",
+          "3.8484723"
+        ],
+        "c_um2": [
+          "0.00252643",
+          "0.010078333",
+          "1200.556"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Handbook of Optics Vol. II. Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "CAF2",
+        "catalogue_tags": [
+          "INFRARED"
+        ],
+        "source_edition": "2019-01-23"
+      }
+    },
+    {
+      "material_id": "HOYA_E-FD1",
+      "display_name": "E-FD1",
+      "dispersion": {
+        "coefficients": [
+          "2.8508499",
+          "-0.01323461",
+          "0.029415325",
+          "0.0025542666",
+          "-0.00021232133",
+          "0.000022261936"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ],
+        "kind": "POWER_SERIES"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "E-FD1",
+        "catalogue_tags": [
+          "HOYA"
+        ],
+        "source_edition": "2017-04-01",
+        "manufacturer": "HOYA"
+      }
+    },
+    {
+      "material_id": "HOYA_LAC7",
+      "display_name": "LAC7",
+      "dispersion": {
+        "coefficients": [
+          "2.6876223",
+          "-0.014375187",
+          "0.012545954",
+          "0.0014642295",
+          "-0.00016982461",
+          "0.0000088048639"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ],
+        "kind": "POWER_SERIES"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "LAC7",
+        "catalogue_tags": [
+          "HOYA"
+        ],
+        "source_edition": "2017-04-01",
+        "manufacturer": "HOYA"
+      }
+    },
+    {
+      "material_id": "SCHOTT_LAK31",
+      "display_name": "LAK31",
+      "dispersion": {
+        "b": [
+          "1.41824715",
+          "0.409404103",
+          "1.15432487"
+        ],
+        "c_um2": [
+          "0.00679114675",
+          "0.021928491",
+          "80.3980528"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "LAK31",
+        "catalogue_tags": [
+          "SCHOTT"
+        ],
+        "source_edition": "2018-06-01",
+        "manufacturer": "SCHOTT"
+      }
+    },
+    {
+      "material_id": "SUMITA_LASFN16",
+      "display_name": "LASFN16",
+      "dispersion": {
+        "coefficients": [
+          "3.123998",
+          "-0.01465489",
+          "0.02510918",
+          "0.0008808814",
+          "-0.00005483324",
+          "0.000004183781"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ],
+        "kind": "POWER_SERIES"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "LASFN16",
+        "catalogue_tags": [
+          "SUMITA"
+        ],
+        "source_edition": "2017-07-26",
+        "manufacturer": "SUMITA"
+      }
+    },
+    {
+      "material_id": "SUMITA_LASFN7",
+      "display_name": "LASFN7",
+      "dispersion": {
+        "coefficients": [
+          "3.068433",
+          "-0.01257531",
+          "0.02708065",
+          "-0.000402003",
+          "0.0001228189",
+          "-0.000005493459"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ],
+        "kind": "POWER_SERIES"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "LASFN7",
+        "catalogue_tags": [
+          "SUMITA"
+        ],
+        "source_edition": "2017-07-26",
+        "manufacturer": "SUMITA"
+      }
+    },
+    {
+      "material_id": "SCHOTT_N-SF56",
+      "display_name": "N-SF56",
+      "dispersion": {
+        "b": [
+          "1.73562085",
+          "0.317487012",
+          "1.95398203"
+        ],
+        "c_um2": [
+          "0.0129624742",
+          "0.0612884288",
+          "161.559441"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "N-SF56",
+        "catalogue_tags": [
+          "SCHOTT"
+        ],
+        "source_edition": "2018-06-01",
+        "manufacturer": "SCHOTT"
+      }
+    },
+    {
+      "material_id": "SCHOTT_N-SK11",
+      "display_name": "N-SK11",
+      "dispersion": {
+        "b": [
+          "1.17963631",
+          "0.229817295",
+          "0.935789652"
+        ],
+        "c_um2": [
+          "0.00680282081",
+          "0.0219737205",
+          "101.513232"
+        ],
+        "kind": "SELLMEIER"
+      },
+      "valid_band_nm": {
+        "min_nm": "450.125",
+        "max_nm": "700.189",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "450",
+          "700"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion restricted to the visible test interval.",
+      "identity": {
+        "designation": "N-SK11",
+        "catalogue_tags": [
+          "SCHOTT"
+        ],
+        "source_edition": "2018-06-01",
+        "manufacturer": "SCHOTT"
+      }
+    }
+  ],
+  "mechanical_accessories": "CONFIGURED_PER_DESIGN",
+  "products": [
+    {
+      "category": "MIRROR",
+      "commercial_readiness": "ORDERABLE",
+      "design_geometry": {
+        "diameter_mm": "25.4",
+        "kind": "CYLINDER",
+        "status": "NOMINAL",
+        "z_max_mm": "0",
+        "z_min_mm": "-6"
+      },
+      "display_name": "Test flat mirror",
+      "display_name_zh_cn": "测试平面反射镜",
+      "form": "FLAT_MIRROR",
+      "frame": {
+        "nominal_propagation": "REFLECTED_ABOUT_+Z",
+        "optical_axis": "+Z",
+        "origin": "REFLECTING_FACE_CENTER",
+        "reference_axis": "FACE_NORMAL",
+        "symmetry": "ROTATIONAL_ABOUT_LOCAL_Z"
+      },
+      "notices": [],
+      "optical_sku": "OS-OPT-TEST-MIR-FLAT",
+      "simulation_models": [
+        {
+          "approximations": [
+            "COATING_AT_SPECIFIED_BOUND",
+            "EDGE_AS_OPAQUE_RIM"
+          ],
+          "edge_radius_mm": "12.7",
+          "fidelity": "SPECIFICATION_ENVELOPE",
+          "media": [],
+          "model_kind": "SURFACE_SEQUENCE",
+          "model_version": "2",
+          "status": "NOMINAL",
+          "surfaces": [
+            {
+              "clear_radius_mm": "11.43",
+              "coating_id": "DIELECTRIC_HIGH_REFLECTOR.400-1100R0.99T0.AOI0-45",
+              "status": "SPECIFIED",
+              "surface_id": "S1",
+              "traced": "REFLECTED",
+              "vertex_z_mm": "0"
+            }
+          ],
+          "valid_band_nm": {
+            "max_nm": "1100",
+            "min_nm": "400",
+            "status": "SPECIFIED"
+          }
+        }
+      ],
+      "specifications": {
+        "clear_aperture_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "22.86"
+        },
+        "coating": "DIELECTRIC_HIGH_REFLECTOR",
+        "materials": [],
+        "outer_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "25.4"
+        },
+        "reflectance": {
+          "status": "DESIGN_BASIS",
+          "value": "0.99"
+        },
+        "thickness_mm": {
+          "status": "SPECIFIED",
+          "value": "6"
+        },
+        "working_band_nm": {
+          "max_nm": "1100",
+          "min_nm": "400",
+          "status": "SPECIFIED"
+        }
+      },
+      "summary": "Synthetic development optic."
+    }
+  ],
+  "schema": "opensci.design_catalog.public_optical_catalog",
+  "schema_version": "3.6"
+}

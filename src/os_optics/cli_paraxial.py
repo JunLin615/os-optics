@@ -99,6 +99,15 @@ def register_project(project_commands: argparse._SubParsersAction) -> None:
                                                        "each element's measured tilt_rad")
     paraxial.add_argument("--catalog", help="use this public optical catalog JSON instead of the release the Project pins / the active one")
     paraxial.set_defaults(handler=_paraxial)
+    pupil = project_commands.add_parser("pupil", help="trace geometric field rays across the declared system aperture")
+    pupil.add_argument("project", help="path to a Project JSON file")
+    pupil.add_argument("--source", required=True, help="field source instance id")
+    pupil.add_argument("--sample", type=float, nargs=2, action="append", metavar=("X", "Y"),
+                       help="normalized pupil coordinate, repeatable (default center and cardinal rim points)")
+    pupil.add_argument("--wavelength-nm", type=float, help="select one emitted vacuum wavelength or the primary reference")
+    pupil.add_argument("--configuration", help="configuration id of a Project with multiple states")
+    pupil.add_argument("--catalog", help="public optical catalog JSON")
+    pupil.set_defaults(handler=_pupil)
     cavity = project_commands.add_parser("cavity", help="stability, Gaussian eigenmode, Gouy phase, free spectral range, transverse-mode spacing, finesse, "
                                                         "mode matching and the resonant build-up of injected light of a linear cavity of placed mirrors",
                                          description=CAVITY_DESCRIPTION, epilog=CAVITY_EPILOG)
@@ -149,6 +158,29 @@ def _coaxial_tolerance(args: argparse.Namespace) -> dict:
     """The request's ``coaxial_tolerance`` from ``--lateral-tolerance-mm`` / ``--tilt-tolerance-rad`` (empty: none stated)."""
 
     return {key: value for key, value in (("lateral_mm", args.lateral_tolerance_mm), ("tilt_rad", args.tilt_tolerance_rad)) if value is not None}
+
+
+def _pupil(args: argparse.Namespace) -> int:
+    from .local import LocalRunError, ParaxialError, trace_system_pupil
+
+    try:
+        document = json.loads(Path(args.project).read_text(encoding="utf-8"))
+        catalog = Path(args.catalog).read_bytes() if args.catalog else None
+    except (OSError, ValueError) as exc:
+        print(f"error: cannot read the input: {exc}")
+        return USAGE_ERROR
+    try:
+        samples = {} if args.sample is None else {"pupil_coordinates": args.sample}
+        result = trace_system_pupil(document, source_id=args.source, wavelength_nm=args.wavelength_nm,
+                                    configuration_id=args.configuration, catalog=catalog, **samples)
+    except (LocalRunError, ParaxialError) as exc:
+        print(json.dumps({"status": "ERROR", **exc.as_dict()}, indent=2))
+        return REFUSED
+    except ValueError as exc:
+        print(json.dumps({"status": "ERROR", "message": str(exc)}, indent=2))
+        return REFUSED
+    print(json.dumps(result, indent=2, ensure_ascii=True))
+    return 0
 
 
 def _paraxial(args: argparse.Namespace) -> int:

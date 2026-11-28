@@ -1,13 +1,58 @@
 # Importing a lens prescription
 
-OpenSci imports a sequential lens prescription (a surface table) as native optical models of your Project. The imported
-lens becomes one optical unit (a `COMPOUND` model) whose members are its physical elements and aperture stops. You place
-the unit in your design like any other component; every surface is simulated, inspected and reported by the same engine
-as the rest of the design.
+Open a sequential optical design as an editable Project, or import a CSV surface table as a compound unit for an existing Project.
 
-Supported format: `csv-surface-table/1` (described below).
+## Open a prescription file
 
-## Ways to import
+```sh
+os-optics-kit import-prescription telescope.zmx --out telescope.project.json
+os-optics project check telescope.project.json
+os-optics project run telescope.project.json --out-dir telescope-run
+os-optics view telescope-run
+```
+
+The Engine API returns a validated native Project. All resolved material data, optical elements, sources, and observation planes travel with the saved JSON. Supply a matching public catalog with `--catalog` or the Python `catalog` argument when a design names historical glasses.
+
+```python
+import json
+from pathlib import Path
+from os_optics.prescription import read_prescription_project
+
+project = read_prescription_project("telescope.zmx")
+Path("telescope.project.json").write_text(json.dumps(project.payload(), indent=2), encoding="utf-8")
+```
+
+### Reading `.zmx`
+
+The reader accepts sequential text in UTF-8 or byte-order-marked UTF-16. It supports centered standard and even-aspheric surfaces, conic mirrors in air, circular clear apertures, annular mirror openings, catalog glass, and real finite or infinite object conjugates. It converts design wavelengths in air to vacuum at the prescription's reference temperature and pressure. The image observation uses a clipping radius only when the file specifies a physical image aperture.
+
+Vertex spacing is signed in the file's fixed Z frame. The first surface after the object sets the origin, including when that surface is an unpowered reference plane. A negative spacing near a stop can place a curved vertex through its opening. The importer tests clearance at the opaque rim. A mirror reverses the travel direction, so a negative spacing on the return leg moves the ray toward smaller Z. The next encounter must be reachable along that leg. An unsupported layout raises an error with its source location. Coordinate breaks, tilted or decentered surfaces, immersed mirrors and terminal glass immersion require additional optical models.
+
+A multi-configuration file becomes one Project whose base geometry is the active state recorded by `MNUM`. Fixed spacings between elements, image-plane spacings, field coordinates and system apertures become native configuration overrides. Element identities and optical models are shared. Choose a state with `os-optics project run zoom.project.json --configuration config-2 --out-dir zoom-2`. Linked configuration solves, unresolved automatic clear radii, and changes to the shape or aperture of a shared element require an export with explicit supported values or a separate file per state. In a single-state file, surface solves `PZUP`, `MAZH` and `VDSZ` use their saved numeric geometry. Subsequent edits use those fixed values. A physical stop with an automatically calculated rim uses the available surrounding body extent and clearance to its neighboring lens.
+
+Each field gets an editable Gaussian alignment probe aimed at the paraxial entrance pupil for the primary wavelength. For a central obscuration the probe samples the clear annulus. Probe power is 1 mW per field, distributed by the input spectral weights. Each state also stores its system aperture and signed entrance pupil position. `trace_system_pupil` takes normalized pupil coordinates and traces geometric rays from each field through the physical surfaces to the prescribed image plane. `ENPD` sets the entrance pupil diameter directly. `FNUM` sets the diameter to the absolute primary-wavelength paraxial effective focal length divided by the declared image f-number. For a finite object, `OBNA` sets the axial cone by `NA = n sin(u)` at the primary wavelength. With `FLOA`, the paraxial image of the marked stop supplies the pupil. The native trace resolves central obscuration and field- or wavelength-dependent clipping at individual surfaces. For a numerical aperture declaration the importer checks axial marginal rays at the primary wavelength and identifies the first conflicting surface at the declaration's source location.
+
+RayOptics 0.9.10 opened a separate 16-interface zoom at its saved spacings of 17.79 and 27.89 mm and reported all 15 configuration operands as unhandled. On the 29-surface reference zoom its material lookup stopped at a missing catalog key. Inspection of Optiland 0.6.3 found no handler for the 40 configuration records in that file. Its 21 `THIC` entries change seven spacings across three states. Reading only its saved surface table loses the other two focal lengths. The Engine reader resolves those records before constructing native components. [RayOptics release](https://pypi.org/project/rayoptics/0.9.10/) · [Optiland release](https://pypi.org/project/optiland/0.6.3/)
+
+See the [microscope and two-mirror reference traces](../ZMX_IMPORT.md) and the [three-position zoom comparison](../ZOOM_IMPORT.md) for measured intercepts, pupil checks and focal lengths.
+
+### Reading `.len`
+
+The same command accepts centered sequential `.len` files. The [`.len` reader guide](../LEN_IMPORT.md) lists supported records, glass lookup, and the three-wavelength comparison for a double Gauss design.
+
+### Reading `.seq`
+
+The same command accepts centered sequential `.seq` files. The [`.seq` reader guide](../SEQ_IMPORT.md) covers the supported command subset, private glass tables, and the catalog asphere's measured focal length and ray intercepts.
+
+### Archive and session inputs
+
+A `.zda` stores analysis-window and display settings. Open the adjacent `.zmx` with the same stem. All 460 session files in the inspected sample directory had a matching prescription and the same eight-byte binary prefix.
+
+A `.zar` bundles a design with supporting files. Restore the archive locally, then open the extracted text `.zmx` with its matching materials. Nine public archives failed ZIP detection. They used two binary header versions and stored a compressed `.zmx.LZW` member with an ASCII or UTF-16LE name. Some packages include opaque component data that needs a separate surface export. The evaluated reader requires Python 3.13 and carries an AGPL-3.0-only license. A native archive reader would need member selection, dependency handling and verification against a paired text prescription. Mechanical CAD interchange is tracked separately in [Engine #92](https://github.com/JunLin615/os-optics/issues/92). [Archive reader and examples](https://github.com/tttom/zmxtools/tree/c14179f476af4dcac54a94e78b41135b3973360e)
+
+## Import a CSV surface table
+
+`csv-surface-table/1` produces one `COMPOUND` model whose members are the physical elements and aperture stops. Place the compound in a Project to trace and inspect it alongside the rest of the design.
 
 **Command line**
 
@@ -106,7 +151,7 @@ Accepted alternative header names: `glass` or `medium` for `material`; `sd` or `
 The surface profile is `z(r) = c r^2 / (1 + sqrt(1 - (1 + k) c^2 r^2)) + a4 r^4 + a6 r^6 + ... + a r` with
 `c = 1 / radius` and `a` = `linear_sag`. A cone alone (an axicon face) has `linear_sag` and no radius: a face of base
 angle alpha (between the cone and a plane normal to the axis) rising toward +Z has `linear_sag = tan(alpha)`, falling
-toward +Z `-tan(alpha)`. An odd-asphere prescription whose only term is r^1 (Zemax `ODDASPHE` with only its first
+toward +Z `-tan(alpha)`. An odd-asphere prescription whose only term is r^1 (`.zmx` `ODDASPHE` with only its first
 coefficient) is this axicon term. On a cylinder (`cylinder_axis`) r is the distance across the straight axis: a conic
 and aspheric terms give an acylinder, `linear_sag` a roof.
 
@@ -132,7 +177,7 @@ These columns belong to their types: on any other row they are refused (`VALUE_I
 `SAG_SHAPE_COMBINATION_NOT_SUPPORTED`). Piston and tilt terms and a profile undefined in the clear aperture are refused
 with their reason codes (`SAG_TERM_NOT_SUPPORTED`, `SAG_OUTSIDE_DOMAIN`). A Zernike surface whose clear aperture reaches
 beyond its normalization radius is imported: the stated terms are evaluated there (`ρ > 1`), and a run states the reach
-on the surface (`surface_profiles[].aperture_reach_mm`). Zemax's `TOROIDAL` and `BICONIC` conventions apply: its
+on the surface (`surface_profiles[].aperture_reach_mm`). The `.zmx` `TOROIDAL` and `BICONIC` conventions apply. The
 `radius` is the Y section.
 
 ### Materials table

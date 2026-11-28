@@ -24,10 +24,8 @@ differentiated through both.
 
 Tables: a table that samples a source formula is differentiated numerically, as before (a central difference of the
 model's own interpolation over ``2 h``, ``h = TABULATED_STEP_NM``, one-sided at a band end; its second difference over
-``h``), through the whole rule. A **measured** table (``origin = measured``) establishes the index only: neither its slope
-nor its curvature is established by sparse measured points, so its group index and group-delay dispersion are unavailable
-(``GroupDispersion.limitation`` says why; ``group_index`` / ``group_delay_dispersion`` return ``None``) -- no group-delay
-claim is made from it.
+``h``), through the whole rule. Tables with ``origin = measured`` or ``source_table`` establish the phase index at their
+nodes. Their group index and group-delay dispersion are unavailable. ``GroupDispersion.limitation`` records the reason.
 
 ``None`` outside the material's valid band (never extrapolated).
 """
@@ -226,6 +224,8 @@ def group_dispersion(model: MaterialOpticalModel, wavelength_nm: float, cfg: Num
     if isinstance(model, TabulatedIndexMaterial):
         if model.measured:
             return GroupDispersion(n, None, None, "none", MEASURED_TABLE_LIMITATION)
+        if model.origin == "source_table":
+            return GroupDispersion(n, None, None, "none", "SOURCE_TABLE_DERIVATIVE: the source tabulates phase index only.")
         return GroupDispersion(n, _numeric_group_index(evaluator, n, wavelength_nm), _numeric_k2(evaluator, wavelength_nm), "numeric")
     if _legacy(model) and isinstance(model, (ConstantIndexMaterial, SellmeierMaterial)):
         return GroupDispersion(n, _legacy_group_index(model, n, wavelength_nm), _legacy_k2(model, n, wavelength_nm), "analytic")

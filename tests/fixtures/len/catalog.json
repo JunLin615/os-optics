@@ -1,0 +1,174 @@
+{
+  "catalog_version": "2026-01-01.1",
+  "categories_offered": [
+    "WINDOW"
+  ],
+  "coatings": [],
+  "materials": [
+    {
+      "material_id": "SK4",
+      "display_name": "SK4",
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.39388834",
+          "0.164510721",
+          "0.963522479"
+        ],
+        "c_um2": [
+          "0.00769147355",
+          "0.0271946227",
+          "99.2757639"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "320.091",
+        "max_nm": "2325.623",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "320",
+          "2325"
+        ],
+        "stated_by": "SOURCE_TEXT",
+        "basis": "Historical glass catalog at its reference conditions."
+      },
+      "status": "SPECIFIED",
+      "basis": "Sellmeier coefficients and validity interval from the reference prescription archive."
+    },
+    {
+      "material_id": "F4",
+      "display_name": "F4",
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.33905825",
+          "0.205224318",
+          "0.897859758"
+        ],
+        "c_um2": [
+          "0.00992220114",
+          "0.0470000918",
+          "107.93675"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "320.091",
+        "max_nm": "2500.67",
+        "status": "SPECIFIED"
+      },
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "320",
+          "2500"
+        ],
+        "stated_by": "SOURCE_TEXT",
+        "basis": "Historical glass catalog at its reference conditions."
+      },
+      "status": "SPECIFIED",
+      "basis": "Sellmeier coefficients and validity interval from the reference prescription archive."
+    }
+  ],
+  "mechanical_accessories": "CONFIGURED_PER_DESIGN",
+  "products": [
+    {
+      "category": "WINDOW",
+      "commercial_readiness": "SIMULATION_ONLY",
+      "design_geometry": {
+        "diameter_mm": "25.4",
+        "kind": "CYLINDER",
+        "status": "NOMINAL",
+        "z_max_mm": "3",
+        "z_min_mm": "0"
+      },
+      "display_name": "Test window",
+      "display_name_zh_cn": "测试窗口片",
+      "form": "PLANE_WINDOW",
+      "frame": {
+        "nominal_propagation": "+Z",
+        "optical_axis": "+Z",
+        "origin": "FIRST_SURFACE_VERTEX",
+        "symmetry": "ROTATIONAL_ABOUT_LOCAL_Z"
+      },
+      "notices": [],
+      "optical_sku": "OS-OPT-TEST-WIN-SK4-T3",
+      "simulation_models": [
+        {
+          "approximations": [
+            "CATALOG_MATERIAL_DISPERSION",
+            "EDGE_AS_OPAQUE_RIM",
+            "GHOST_REFLECTIONS_NOT_TRACED"
+          ],
+          "edge_radius_mm": "12.7",
+          "fidelity": "SURFACE_PRESCRIPTION",
+          "media": [
+            "SK4"
+          ],
+          "model_kind": "SURFACE_SEQUENCE",
+          "model_version": "2",
+          "status": "SPECIFIED",
+          "surfaces": [
+            {
+              "clear_radius_mm": "11.43",
+              "status": "SPECIFIED",
+              "surface_id": "S1",
+              "traced": "TRANSMITTED",
+              "vertex_z_mm": "0"
+            },
+            {
+              "clear_radius_mm": "11.43",
+              "status": "SPECIFIED",
+              "surface_id": "S2",
+              "traced": "TRANSMITTED",
+              "vertex_z_mm": "3"
+            }
+          ],
+          "valid_band_nm": {
+            "max_nm": "1100",
+            "min_nm": "400",
+            "status": "SPECIFIED"
+          }
+        }
+      ],
+      "specifications": {
+        "clear_aperture_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "22.86"
+        },
+        "coating": "UNCOATED",
+        "materials": [
+          "SK4"
+        ],
+        "outer_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "25.4"
+        },
+        "thickness_mm": {
+          "status": "SPECIFIED",
+          "value": "3"
+        },
+        "working_band_nm": {
+          "max_nm": "1100",
+          "min_nm": "400",
+          "status": "SPECIFIED"
+        }
+      },
+      "summary": "Synthetic window."
+    }
+  ],
+  "schema": "opensci.design_catalog.public_optical_catalog",
+  "schema_version": "3.6"
+}

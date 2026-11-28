@@ -44,6 +44,7 @@ from ..design_catalog.optical_catalog import PublicCoatingV1
 from .design_content import ObservationV1, ProjectMaterialV1, TargetV1
 from .component import OpticalComponentInstanceV1, OpticalRoleV1, require_unit_quaternion
 from .configuration import ProjectConfigurationV1, fixed_dof_motions
+from .system_aperture import SystemApertureV1
 from .compute_budget import ComputeBudgetV1
 from .numerical_settings import NumericalSettingsV1, merge_numerical_settings
 from .optical_model import (
@@ -66,7 +67,9 @@ class ProjectDocumentV2(OmitAbsentFields, StrictContractModel):
     observation planes and targets."""
 
     # Omit unstated fields even in dumps without exclude_none to preserve existing documents.
-    _omit_when_none: ClassVar[tuple[str, ...]] = ("environment", "numerical_settings")
+    _omit_when_none: ClassVar[tuple[str, ...]] = ("environment", "numerical_settings", "system_aperture")
+
+    system_aperture: SystemApertureV1 | None = None
 
     schema_id: Literal["opensci.project"] = Field(alias="schema")
     project_schema_version: Literal["2.0"]
@@ -271,6 +274,8 @@ class ProjectDocumentV2(OmitAbsentFields, StrictContractModel):
         stated = {} if configuration.compute_budget is None else configuration.compute_budget.model_dump(mode="json", exclude_none=True)
         if stated:
             payload["compute_budget"] = {**payload.get("compute_budget", {}), **stated}
+        if configuration.system_aperture is not None:
+            payload["system_aperture"] = configuration.system_aperture.model_dump(mode="json", exclude_none=True)
         if configuration.numerical_settings is not None:
             settings = merge_numerical_settings(payload.get("numerical_settings"), configuration.numerical_settings)
             if settings is not None:

@@ -1,0 +1,617 @@
+{
+  "catalog_version": "2018-10-19.1",
+  "categories_offered": [
+    "WINDOW"
+  ],
+  "coatings": [],
+  "materials": [
+    {
+      "material_id": "E48R",
+      "display_name": "E48R",
+      "identity": {
+        "manufacturer": "ZEON",
+        "designation": "E48R",
+        "catalogue_tags": [
+          "ZEON"
+        ],
+        "source_edition": "undated"
+      },
+      "dispersion": {
+        "kind": "POWER_SERIES",
+        "coefficients": [
+          "2.30319693",
+          "-0.00117825616",
+          "0.0140597151",
+          "0.0000297687093",
+          "0.0000328913151",
+          "-0.00000161443145"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "400.112",
+        "max_nm": "1600.429",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 1.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "400",
+          "1600"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "L-BAL42",
+      "display_name": "L-BAL42",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "L-BAL42",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.39528097",
+          "0.072551952",
+          "1.66335848"
+        ],
+        "c_um2": [
+          "0.011186203",
+          "-0.0246748575",
+          "167.717958"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.118",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.015",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "M-TAFD305",
+      "display_name": "M-TAFD305",
+      "identity": {
+        "manufacturer": "HOYA",
+        "designation": "M-TAFD305",
+        "catalogue_tags": [
+          "HOYA"
+        ],
+        "source_edition": "2017-04-01"
+      },
+      "dispersion": {
+        "kind": "POWER_SERIES",
+        "coefficients": [
+          "3.327184",
+          "-0.01343242",
+          "0.033398",
+          "0.001006047",
+          "-0.00002136908",
+          "0.000003972561"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.113",
+        "max_nm": "1014.253",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 1.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.01",
+          "1013.98"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-BSL7",
+      "display_name": "S-BSL7",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-BSL7",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.1515019",
+          "0.118583612",
+          "1.26301359"
+        ],
+        "c_um2": [
+          "0.010598413",
+          "-0.011822519",
+          "129.617662"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.118",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.015",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-LAH55",
+      "display_name": "S-LAH55",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-LAH55",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.95615766",
+          "0.319216215",
+          "1.39173189"
+        ],
+        "c_um2": [
+          "0.00979338965",
+          "0.0376836296",
+          "94.8775271"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "330.094",
+        "max_nm": "2400.643",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "330",
+          "2400"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-LAH66",
+      "display_name": "S-LAH66",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-LAH66",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.39280586",
+          "0.679577094",
+          "1.38702069"
+        ],
+        "c_um2": [
+          "0.00608475118",
+          "0.0233925351",
+          "95.8354094"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.118",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.015",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-LAL14",
+      "display_name": "S-LAL14",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-LAL14",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.2372097",
+          "0.589722623",
+          "1.3192188"
+        ],
+        "c_um2": [
+          "0.015355132",
+          "-0.00030789625",
+          "93.7202947"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.118",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.015",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-NPH2",
+      "display_name": "S-NPH2",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-NPH2",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "2.0386951",
+          "0.437269641",
+          "2.96711461"
+        ],
+        "c_um2": [
+          "0.0170796224",
+          "0.0749254813",
+          "174.155354"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "404.769",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "404.656",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "S-NPH53",
+      "display_name": "S-NPH53",
+      "identity": {
+        "manufacturer": "OHARA",
+        "designation": "S-NPH53",
+        "catalogue_tags": [
+          "OHARA-2018-10-19"
+        ],
+        "source_edition": "2018-10-19"
+      },
+      "dispersion": {
+        "kind": "SELLMEIER",
+        "b": [
+          "1.85484904",
+          "0.396194484",
+          "2.43512461"
+        ],
+        "c_um2": [
+          "0.0134621486",
+          "0.0631945361",
+          "170.864886"
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "404.769",
+        "max_nm": "2326.043",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 2.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "404.656",
+          "2325.42"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "TAFD25",
+      "display_name": "TAFD25",
+      "identity": {
+        "manufacturer": "HOYA",
+        "designation": "TAFD25",
+        "catalogue_tags": [
+          "HOYA"
+        ],
+        "source_edition": "2017-04-01"
+      },
+      "dispersion": {
+        "kind": "POWER_SERIES",
+        "coefficients": [
+          "3.4905528",
+          "-0.016325771",
+          "0.041146322",
+          "0.0027169124",
+          "-0.00018260518",
+          "0.000020641862"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.113",
+        "max_nm": "1014.253",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 1.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.01",
+          "1013.98"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    },
+    {
+      "material_id": "TAFD30",
+      "display_name": "TAFD30",
+      "identity": {
+        "manufacturer": "HOYA",
+        "designation": "TAFD30",
+        "catalogue_tags": [
+          "HOYA"
+        ],
+        "source_edition": "2017-04-01"
+      },
+      "dispersion": {
+        "kind": "POWER_SERIES",
+        "coefficients": [
+          "3.4419038",
+          "-0.014175245",
+          "0.03435104",
+          "0.0011752271",
+          "-0.000039010343",
+          "0.0000037417054"
+        ],
+        "exponents": [
+          0,
+          2,
+          -2,
+          -4,
+          -6,
+          -8
+        ]
+      },
+      "valid_band_nm": {
+        "min_nm": "365.113",
+        "max_nm": "1014.253",
+        "status": "SPECIFIED"
+      },
+      "status": "SPECIFIED",
+      "basis": "Source dispersion formula 1.",
+      "index_reference": {
+        "wavelength": "AIR",
+        "index": "RELATIVE_TO_AIR",
+        "reference_air": {
+          "temperature_c": "20",
+          "pressure_pa": "101325"
+        },
+        "source_band_nm": [
+          "365.01",
+          "1013.98"
+        ],
+        "stated_by": "CATALOGUE_FORMAT"
+      }
+    }
+  ],
+  "mechanical_accessories": "CONFIGURED_PER_DESIGN",
+  "products": [
+    {
+      "category": "WINDOW",
+      "commercial_readiness": "SIMULATION_ONLY",
+      "design_geometry": {
+        "diameter_mm": "30",
+        "kind": "CYLINDER",
+        "status": "NOMINAL",
+        "z_max_mm": "1.21",
+        "z_min_mm": "0"
+      },
+      "display_name": "Reference design plate, surfaces 26 and 27",
+      "display_name_zh_cn": "参考设计平板",
+      "form": "PLANE_WINDOW",
+      "frame": {
+        "nominal_propagation": "+Z",
+        "optical_axis": "+Z",
+        "origin": "FIRST_SURFACE_VERTEX",
+        "symmetry": "ROTATIONAL_ABOUT_LOCAL_Z"
+      },
+      "notices": [],
+      "optical_sku": "OS-OPT-TEST-ZOOM-PLATE",
+      "simulation_models": [
+        {
+          "approximations": [
+            "CATALOG_MATERIAL_DISPERSION",
+            "EDGE_AS_OPAQUE_RIM",
+            "GHOST_REFLECTIONS_NOT_TRACED"
+          ],
+          "edge_radius_mm": "15",
+          "fidelity": "SURFACE_PRESCRIPTION",
+          "media": [
+            "S-BSL7"
+          ],
+          "model_kind": "SURFACE_SEQUENCE",
+          "model_version": "2",
+          "status": "SPECIFIED",
+          "surfaces": [
+            {
+              "clear_radius_mm": "15",
+              "status": "SPECIFIED",
+              "surface_id": "S1",
+              "traced": "TRANSMITTED",
+              "vertex_z_mm": "0"
+            },
+            {
+              "clear_radius_mm": "15",
+              "status": "SPECIFIED",
+              "surface_id": "S2",
+              "traced": "TRANSMITTED",
+              "vertex_z_mm": "1.21"
+            }
+          ],
+          "valid_band_nm": {
+            "max_nm": "1100",
+            "min_nm": "400",
+            "status": "SPECIFIED"
+          }
+        }
+      ],
+      "specifications": {
+        "clear_aperture_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "30"
+        },
+        "coating": "UNCOATED",
+        "materials": [
+          "S-BSL7"
+        ],
+        "outer_diameter_mm": {
+          "status": "SPECIFIED",
+          "value": "30"
+        },
+        "thickness_mm": {
+          "status": "SPECIFIED",
+          "value": "1.21"
+        },
+        "working_band_nm": {
+          "max_nm": "1100",
+          "min_nm": "400",
+          "status": "SPECIFIED"
+        }
+      },
+      "summary": "Plane plate from the zoom prescription at surfaces 26 and 27."
+    }
+  ],
+  "schema": "opensci.design_catalog.public_optical_catalog",
+  "schema_version": "3.6"
+}

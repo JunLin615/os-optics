@@ -25,7 +25,7 @@ A medium named by a surface resolves, in this order, to
      matches it, reported (``GLASS_NAME_MATCHED``); several: ``GLASS_AMBIGUOUS``.
 
    With a stated catalogue order, a glass the prescription does not qualify by maker that resolves to a record outside
-   every listed catalogue (its maker and catalogue tags; e.g. Zemax ``MISC`` ``PMMA`` -> a literature model) is a
+   every listed catalogue (its maker and catalogue tags, e.g. ``MISC`` ``PMMA`` resolving to a literature model) is a
    substitution, not the specified curve: reported (``GLASS_OUTSIDE_CATALOGUES``) and marked ``outside_catalogue_order``
    in the report's ``glasses`` (a record without identity cannot be checked and is not marked).
 
@@ -72,10 +72,10 @@ from .._vendor.shared_contracts.common.decimal_string import decimal_to_string
 from .._vendor.shared_contracts.design_catalog import FactStatus, PublicCoatingV1, PublicOpticalCatalogV2, VACUUM, WavelengthBandV1
 from .._vendor.shared_contracts.optical_design.optical_model import ConstantIndexDispersionV1, ProjectModelMaterialV1
 from .._vendor.shared_contracts.design_catalog.material_physics import STANDARD_REFERENCE_AIR, IndexReferenceV1, MaterialNameIndex
-from .._vendor.shared_contracts.design_catalog.optical_catalog import SellmeierDispersionV1
+from .._vendor.shared_contracts.design_catalog.optical_catalog import SellmeierDispersionV1, TabulatedDispersionV1
 from ..catalog_copy import copy_catalog_material
 from .errors import ImportWarning, PrescriptionErrorCode as E, ProblemList, SourceLocation
-from .ir import LAW_AIR, CoatingDefinition, CoatingNode, ConstantIndexDefinition, MaterialDefinition, MaterialRef, Prescription
+from .ir import LAW_AIR, CoatingDefinition, CoatingNode, ConstantIndexDefinition, MaterialDefinition, MaterialRef, Prescription, TabulatedIndexDefinition
 
 GLASS_SOURCES = ("catalog", "inline")
 #: How many published names an unknown glass's message suggests.
@@ -162,15 +162,22 @@ class ResolvedMaterials:
 def _inline_material(definition: MaterialDefinition) -> ProjectModelMaterialV1:
     if isinstance(definition.dispersion, ConstantIndexDefinition):
         dispersion: object = ConstantIndexDispersionV1(refractive_index=decimal_to_string(definition.dispersion.refractive_index))
+    elif isinstance(definition.dispersion, TabulatedIndexDefinition):
+        dispersion = TabulatedDispersionV1(
+            wavelength_nm=tuple(map(decimal_to_string, definition.dispersion.wavelength_nm)),
+            refractive_index=tuple(map(decimal_to_string, definition.dispersion.refractive_index)), origin="SOURCE_TABLE")
     else:
         dispersion = SellmeierDispersionV1(b=tuple(decimal_to_string(v) for v in definition.dispersion.b),
                                            c_um2=tuple(decimal_to_string(v) for v in definition.dispersion.c_um2))
     low, high = definition.min_nm, definition.max_nm
     reference = None
     if definition.index_reference == LAW_AIR:  # the glass catalogues' convention (ir.MaterialDefinition)
+        tabulated = isinstance(definition.dispersion, TabulatedIndexDefinition)
         reference = IndexReferenceV1(wavelength="AIR", index="RELATIVE_TO_AIR", reference_air=STANDARD_REFERENCE_AIR,
-                                     source_band_nm=(decimal_to_string(low), decimal_to_string(high)), stated_by="SOURCE_TEXT",
-                                     basis="Stated in the imported prescription ([materials] index_reference AIR).")
+                                     source_band_nm=(decimal_to_string(low), decimal_to_string(high)),
+                                     stated_by="CATALOGUE_FORMAT" if tabulated else "SOURCE_TEXT",
+                                     basis=("Private catalog indices are relative to standard air at tabulated air wavelengths."
+                                            if tabulated else "Stated in the imported prescription ([materials] index_reference AIR)."))
         low, high = reference.vacuum_band()
     return ProjectModelMaterialV1(
         material_id=definition.name, display_name=definition.display_name or definition.name, dispersion=dispersion,
@@ -448,12 +455,12 @@ def _identity(published: object) -> dict[str, object]:
     return out
 
 
-def resolve_materials(prescription: Prescription, *, catalog: PublicOpticalCatalogV2 | CatalogSource | None, glass_source: str,
+def resolve_materials(prescription: Prescription, *, catalog: PublicOpticalCatalogV2 | CatalogSource | _Catalog | None, glass_source: str,
                       band_nm: tuple[Decimal, Decimal] | None, band_stated_by: str | None, problems: ProblemList
                       ) -> ResolvedMaterials | None:
     """Resolve every medium and coating (module docstring); problems are added to ``problems`` (``None`` returned then)."""
 
-    source = _Catalog(catalog, glass_source)
+    source = catalog if isinstance(catalog, _Catalog) else _Catalog(catalog, glass_source)
     warnings: list[ImportWarning] = []
     inline = {d.name: d for d in prescription.materials}
     material_ids: dict[str, str] = {}

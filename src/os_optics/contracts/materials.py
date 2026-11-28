@@ -311,6 +311,13 @@ class TabulatedIndexMaterial(_IsotropicMaterial):
         return self
 
 
+class SourceTableIndexMaterial(TabulatedIndexMaterial):
+    """Phase-index nodes supplied directly by the source. Their slope and curvature are unspecified."""
+
+    kind: Literal["source_table"] = "source_table"
+    origin: Literal["source_table"] = "source_table"
+
+
 def reference_air_index(reference: IndexReference, vacuum_nm: float) -> float:
     """``n_ref`` of a law's reference air at a vacuum wavelength (``air_index``)."""
 
@@ -609,7 +616,7 @@ GRADIENT_MEDIA = (GradientIndexMaterial, AxialGradientIndexMaterial)
 
 
 MaterialOpticalModel = Annotated[
-    ConstantIndexMaterial | SellmeierMaterial | TabulatedIndexMaterial | UniaxialMaterial | GradientIndexMaterial
+    ConstantIndexMaterial | SellmeierMaterial | TabulatedIndexMaterial | SourceTableIndexMaterial | UniaxialMaterial | GradientIndexMaterial
     | AxialGradientIndexMaterial | PowerSeriesMaterial | HerzbergerMaterial | TemperatureSellmeierMaterial | AirMaterial,
     Field(discriminator="kind"),
 ]
