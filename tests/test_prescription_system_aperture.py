@@ -39,6 +39,7 @@ def axial(project, fraction=1, configuration_id=None):
 @pytest.mark.parametrize(('fnumber', 'radius', 'stop_y', 'specimen_y', 'specimen_sine'), [
     (0.6, 1.5257829202, 3.1723052130, .0000364288, -.8343212812),
     (2.4, .3814457300, .7538057947, .0000040008, -.2081258256),
+    (4.8, .1907228650, .3759482274, .0000053090, -.1040624683),
 ])
 def test_reiley_image_f_number_sets_actual_marginal_ray(tmp_path, fnumber, radius, stop_y, specimen_y, specimen_sine):
     path = REILEY if fnumber == .6 else variant(tmp_path, REILEY, 'FNUM 6.0E-1', f'FNUM {fnumber}')
@@ -50,6 +51,10 @@ def test_reiley_image_f_number_sets_actual_marginal_ray(tmp_path, fnumber, radiu
     assert ray['origin_mm'][1] == pytest.approx(.999 * radius, abs=5e-8)
     stop = next(s for s in ray['paths'][0]['segments'] if s['end_surface_id'] == 'STOP/stop')
     assert stop['end_mm'][1:] == pytest.approx((stop_y, 32.8244476161923), abs=2e-7)
+    lineage = ray['paths'][0]['lineage']
+    first_lens_hit = lineage.index('L4/S1:refract')
+    stop_hit = lineage.index('STOP/stop:aperture_stop')
+    assert (first_lens_hit < stop_hit) == (fnumber == 4.8)
     observation, = ray['observations']
     assert (observation['v_mm'], observation['direction_v']) == pytest.approx((specimen_y, specimen_sine), abs=2e-7)
 
@@ -63,6 +68,13 @@ def test_folded_annular_pupil_blocks_the_center_and_delivers_an_off_center_ray(t
     assert annulus['origin_mm'][0] == pytest.approx(.6 * 10949 / 2)
     assert annulus['paths'][0]['lineage'] == ['M1/S1:reflect', 'M2/S1:reflect', 'observation/image:observe']
     assert annulus['observations']
+
+
+def test_returning_marginal_ray_must_fit_the_primary_mirror_hole(tmp_path):
+    path = variant(tmp_path, FIXTURES / 'Keck_f13.zmx', 'CLAP 1.0E+3 5.48E+3 0', 'CLAP 80 5.48E+3 0')
+    with pytest.raises(PrescriptionImportError, match=r'returns to source surface 2 \(M1/S1\)') as err:
+        read_prescription_project(path)
+    assert err.value.problems[0].location.column == 'ENPD'
 
 
 def test_zoom_pupil_follows_only_the_selected_position(tmp_path):

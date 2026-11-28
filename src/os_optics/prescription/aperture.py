@@ -38,20 +38,43 @@ def validate_aperture(project: ProjectDocumentV2, imported: PrescriptionImport) 
         event = {'aperture': 'aperture_stop', 'mirror': 'reflect', 'lens': 'refract'}[role]
         for i, label in enumerate(member['surfaces'], 1):
             surface = 'stop' if role == 'aperture' else f'S{i}'
-            expected.append((f'{component}/{surface}:{event}', label))
+            expected.append((f'{component}/{surface}:{event}', label, role == 'aperture'))
+    labels = {event.split(':')[0]: label for event, label, _ in expected}
     for ray in trace['rays']:
-        prefix = 0
+        failures = []
         for path in ray['paths']:
-            hits = iter(path['lineage'])
-            count = 0
-            for interaction, _ in expected:
-                if interaction not in hits:
-                    break
-                count += 1
-            prefix = max(prefix, count)
-        if prefix < len(expected):
-            interaction, label = expected[prefix]
+            failure = _path_conflict(path, expected, labels)
+            if failure is None:
+                break
+            failures.append(failure)
+        else:
+            # If a coating splits the ray, report the path that reached the most prescribed interfaces.
+            _, surface, reason = max(failures, default=(0, next(iter(labels)), 'cannot reach'))
             raise refuse(E.UNSUPPORTED_FEATURE,
                          f'The primary-wavelength axial marginal ray at entrance pupil radius '
-                         f'{trace["entrance_pupil_radius_mm"]:g} mm cannot pass source surface {label} '
-                         f'({interaction.split(":")[0]}). Reduce the declared system aperture or verify the physical clear aperture.', where)
+                         f'{trace["entrance_pupil_radius_mm"]:g} mm {reason} source surface {labels[surface]} '
+                         f'({surface}). Reduce the declared system aperture or verify the physical clear aperture.', where)
+
+
+def _path_conflict(path, expected, labels):
+    lineage = path['lineage']
+    observed = 'observation/image:observe' in lineage
+    if observed:
+        lineage = lineage[:lineage.index('observation/image:observe')]
+    interfaces = iter(lineage)
+    for i, (event, _, is_stop) in enumerate(expected):
+        # A curved lens can extend through a nearby stop's opening. Its front face may precede the stop
+        # for an inner ray and follow it for an outer ray. Both rays must traverse the same optical interfaces.
+        if event not in (lineage if is_stop else interfaces):
+            return i, event.split(':')[0], 'cannot pass'
+    seen = set()
+    for event in lineage:
+        surface, _, action = event.partition(':')
+        if action in {'reflect', 'refract'} and surface in labels:
+            if surface in seen:
+                return len(expected), surface, 'returns to'
+            seen.add(surface)
+    blocker = path['termination_surface_id']
+    if not observed and path['termination'] == 'CLIPPED' and blocker in labels:
+        return len(expected), blocker, 'is blocked on its return at'
+    return None
