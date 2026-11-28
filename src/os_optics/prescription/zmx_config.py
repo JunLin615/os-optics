@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from .csv_table import NUMBER_PATTERN
+from .csv_table import NUMBER_MAX, NUMBER_MIN, NUMBER_PATTERN
 from .errors import PrescriptionErrorCode as E, SourceLocation, refuse
 
 
@@ -14,6 +14,10 @@ _SURFACE_RECORD = {"THIC": "DISZ", "SDIA": "DIAM", "CRVT": "CURV"}
 _FIELD_RECORD = {"XFIE": "XFLN", "YFIE": "YFLN"}
 _APERTURE_RECORDS = ("FNUM", "ENPD", "OBNA")
 _SURFACE_SOLVES = {"PZUP", "PKUP", "MAZH"}
+# Includes the operand name, target, configuration, value and ten solve fields.
+_FIXED_CELL_WORDS = 14
+_REFERENCE_CONFIG = 7
+_SOLVE_SCALE = 9
 
 
 def _index(token: str, location: SourceLocation) -> int:
@@ -29,7 +33,7 @@ def _number(token: str, location: SourceLocation) -> Decimal:
     if NUMBER_PATTERN.fullmatch(token):
         try:
             value = Decimal(token)
-            if not value or -300 <= value.adjusted() <= 300 and value.copy_abs() <= Decimal('1e300'):
+            if not value or NUMBER_MIN <= value.copy_abs() <= NUMBER_MAX:
                 return value
         except InvalidOperation:
             pass
@@ -57,24 +61,26 @@ def _cell(words: list[str], row: int, count: int) -> _Cell:
         raise refuse(E.VALUE_INVALID, f"Configuration {config} is outside 1 through {count}.", location)
     if operand not in (*_SURFACE_RECORD, *_FIELD_RECORD, "APER", "MOFF"):
         raise refuse(E.UNSUPPORTED_FEATURE, f"Configuration operand {operand!r} is unsupported.", location)
+    value_and_solve = words[3:_REFERENCE_CONFIG]
+    references = words[_REFERENCE_CONFIG:_SOLVE_SCALE]
+    modifiers = words[_SOLVE_SCALE:]
     if operand == "MOFF":
-        # The empty, disabled operand is also written for files with a single configuration.
-        if (index or words[3:7] != ['""', '0', '0', '0'] or words[9:11] != ['0', '0.0'] or
-                words[11:] not in (['""'], ['""', '0'])):
+        # The disabled operand has two encodings, with or without a trailing zero.
+        if (index or value_and_solve != ['""', '0', '0', '0'] or modifiers[:2] != ['0', '0.0'] or
+                modifiers[2:] not in (['""'], ['""', '0'])):
             raise refuse(E.UNSUPPORTED_FEATURE, "Only an empty disabled configuration operand is supported.", location)
     else:
-        if len(words) != 14:
+        if len(words) != _FIXED_CELL_WORDS:
             raise refuse(E.ROW_INVALID, f"{operand} requires its value and complete solve fields.", location)
-        # After the value come solve type, two operand arguments, reference configuration and row,
-        # scale, offset and optional solve data. Reference indices are inactive for a fixed cell.
-        if (words[4:7] != ['0', '0', '0'] or words[11:] != ['0', '""', '0'] or
-                _number(words[9], location) != 1 or _number(words[10], location) != 0):
+        scale, offset, *solve_data = modifiers
+        if (value_and_solve[1:] != ['0', '0', '0'] or solve_data != ['0', '""', '0'] or
+                _number(scale, location) != 1 or _number(offset, location) != 0):
             raise refuse(E.UNSUPPORTED_FEATURE, f"{operand} has unsupported solve or parameter fields. "
                          "Supply fixed values for each configuration.", location)
         value = _number(words[3], location)
         if operand in {"APER", "SDIA"} and value <= 0:
             raise refuse(E.VALUE_INVALID, f"{operand} requires a positive aperture.", location)
-    for token in words[7:9]:
+    for token in references:
         if _index(token, location) < 1:
             raise refuse(E.VALUE_INVALID, "Expected positive reference indices in the configuration cell.", location)
     return _Cell(operand, index, words[3], location)
@@ -181,7 +187,7 @@ def configuration_states(text: str) -> tuple[int, list[str]]:
             break
         # Some merit operands share names with configuration operands. The fixed-cell
         # layout (including quoted solve data) identifies an out-of-table record.
-        if key == "MOFF" or (len(words) == 14 and words[-2] == '""' and
+        if key == "MOFF" or (len(words) == _FIXED_CELL_WORDS and words[-2] == '""' and
                              key in (*_SURFACE_RECORD, *_FIELD_RECORD, "APER", "APMN", "APMX", "PRAM", "WAVE")):
             raise refuse(E.ROW_INVALID, f"Configuration operand {key} precedes its MNUM record.",
                          SourceLocation(row=line + 1, column=key, section="configurations"))

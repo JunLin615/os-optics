@@ -47,6 +47,8 @@ from decimal import Context, Decimal, Inexact, ROUND_HALF_EVEN, localcontext
 
 from .errors import ImportWarning, SourceLocation
 
+#: Nanometres per micrometre for source wavelengths (exact).
+NM_PER_UM = Decimal(1000)
 #: Millimetres per unit of every length unit a prescription may use (exact).
 MM_PER_UNIT: dict[str, Decimal] = {"mm": Decimal(1), "cm": Decimal(10), "m": Decimal(1000), "in": Decimal("25.4")}
 #: Spellings accepted for each unit.

@@ -47,7 +47,7 @@ from .errors import (
     SourceLocation,
     refuse,
 )
-from .glass import GLASS_SOURCES, CatalogSource, resolve_materials
+from .glass import GLASS_SOURCES, CatalogSource, _Catalog, resolve_materials
 from .ir import MM_PER_UNIT, UNIT_SPELLINGS, WAVELENGTHS_AIR, Prescription
 from .lowering import lower_prescription
 
@@ -212,7 +212,7 @@ def import_prescription(text: str | bytes, *, format: str = CSV_SURFACE_TABLE, m
 
 
 def _import_models(rx: Prescription, *, model_id: str = DEFAULT_MODEL_ID,
-                   catalog: PublicOpticalCatalogV2 | CatalogSource | None = None, glass_source: str = "catalog",
+                   catalog: PublicOpticalCatalogV2 | CatalogSource | _Catalog | None = None, glass_source: str = "catalog",
                    wavelength_band_nm: tuple[Decimal, Decimal] | None = None,
                    edge_review_ratio: float | None = None) -> PrescriptionImport:
     problems = ProblemList()

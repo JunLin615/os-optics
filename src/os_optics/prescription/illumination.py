@@ -6,7 +6,9 @@ import math
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from ..composition.rotation import cos_sin_deg, normalize_quaternion
+from .._vendor.shared_contracts.design_catalog.material_physics import STANDARD_TEMPERATURE_C
+from ..composition.rotation import QUARTER_TURN_DEG, cos_sin_deg, normalize_quaternion
+from ..units import NM_TO_MM
 from .errors import PrescriptionErrorCode as E, SourceLocation, refuse
 from .ir import IrSurface
 
@@ -16,6 +18,9 @@ if TYPE_CHECKING:
 
 # The prescription describes design fields and relative spectral weights. Optical power is a probe setting.
 _PROBE_POWER_W = Decimal('0.001')
+_DEFAULT_PROBE_WAVELENGTH_NM = Decimal(550)
+# The collimated Gaussian probe waist samples 4% of the clear pupil radius.
+_PUPIL_TO_PROBE_WAIST_RATIO = 25.0
 
 
 def _spectrum(imported: PrescriptionImport) -> tuple[float, dict, str]:
@@ -25,7 +30,7 @@ def _spectrum(imported: PrescriptionImport) -> tuple[float, dict, str]:
     bounds = (Decimal(band["min_nm"]), Decimal(band["max_nm"])) if band else None
     waves = rx.wavelengths_nm
     if not waves:
-        wave = Decimal(550)
+        wave = _DEFAULT_PROBE_WAVELENGTH_NM
         if bounds:
             wave = max(bounds[0], min(wave, bounds[1]))
         waves = (wave,)
@@ -101,7 +106,7 @@ def _stop_transfer(imported: PrescriptionImport, stop_index: int, primary: float
             continue
         material_id = resolved.get(ref.key, ref.name.upper())
         if material_id not in cache:
-            temperature = float(imported.environment.temperature_c) if imported.environment else 20.0
+            temperature = float(imported.environment.temperature_c) if imported.environment else float(STANDARD_TEMPERATURE_C)
             evaluator = build_evaluator(engine_material(materials[material_id], temperature_c=temperature), DEFAULT_NUMERICAL_CONFIG, temperature)
             value, issue = evaluator.index(primary)
             if value is None:
@@ -121,7 +126,7 @@ def _stop_transfer(imported: PrescriptionImport, stop_index: int, primary: float
 
 
 def _slope(angle: Decimal, location: SourceLocation) -> float:
-    if not -90 < angle < 90:
+    if not -QUARTER_TURN_DEG < angle < QUARTER_TURN_DEG:
         raise refuse(E.UNSUPPORTED_FEATURE, f"angular field {angle} degrees does not propagate towards increasing z", location)
     # Reduce the unsigned angle so tiny negative slopes retain the same precision as positive ones.
     c, s = cos_sin_deg(float(abs(angle)))
@@ -153,13 +158,13 @@ def sources(imported: PrescriptionImport) -> list[dict]:
     if finite:
         z = -float(rx.object.distance_mm)
         # Waist giving the smallest paraxial spot at one object distance, at the primary vacuum wavelength.
-        waist = math.sqrt(-z * (primary * 1e-6 / math.pi))
+        waist = math.sqrt(-z * (primary * NM_TO_MM / math.pi))
         conjugate = f"Finite object at z={z:g} mm."
     else:
         z = min(0.0, front) - max(1.0, clear)
         # Sample 4% of the specified entrance-pupil radius. For a holed stop, keep the probe inside the clear annulus.
         radius = float(rx.entrance_pupil_diameter_mm) / 2 if rx.entrance_pupil_diameter_mm else clear
-        waist = (min(radius, clear - hole) if hole else radius) / 25.0
+        waist = (min(radius, clear - hole) if hole else radius) / _PUPIL_TO_PROBE_WAIST_RATIO
         conjugate = "Object at infinity." if rx.object and rx.object.infinite else "Assumed object at infinity."
     # A native observation records crossings in either direction. On a single reflection the image can sit
     # on the incoming leg. A collimated field can start past that plane in the gap ahead of all the optics.

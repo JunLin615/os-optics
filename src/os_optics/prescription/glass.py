@@ -448,12 +448,12 @@ def _identity(published: object) -> dict[str, object]:
     return out
 
 
-def resolve_materials(prescription: Prescription, *, catalog: PublicOpticalCatalogV2 | CatalogSource | None, glass_source: str,
+def resolve_materials(prescription: Prescription, *, catalog: PublicOpticalCatalogV2 | CatalogSource | _Catalog | None, glass_source: str,
                       band_nm: tuple[Decimal, Decimal] | None, band_stated_by: str | None, problems: ProblemList
                       ) -> ResolvedMaterials | None:
     """Resolve every medium and coating (module docstring); problems are added to ``problems`` (``None`` returned then)."""
 
-    source = _Catalog(catalog, glass_source)
+    source = catalog if isinstance(catalog, _Catalog) else _Catalog(catalog, glass_source)
     warnings: list[ImportWarning] = []
     inline = {d.name: d for d in prescription.materials}
     material_ids: dict[str, str] = {}

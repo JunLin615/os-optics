@@ -62,8 +62,15 @@ def _source_transfer(state, air_um, materials):
 
 @pytest.fixture(scope='module')
 def reopened_zoom(tmp_path_factory):
-    catalog = load_public_catalog(CATALOG)
-    project = read_prescription_project(SOURCE, catalog=catalog)
+    calls = 0
+
+    def load_catalog():
+        nonlocal calls
+        calls += 1
+        return load_public_catalog(CATALOG)
+
+    project = read_prescription_project(SOURCE, catalog=load_catalog)
+    assert calls == 1
     path = tmp_path_factory.mktemp('zoom') / 'project.json'
     path.write_text(json.dumps(project.payload()), encoding='utf-8')
     reopened = load_project(path)

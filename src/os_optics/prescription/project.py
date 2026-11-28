@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from decimal import Decimal
-from functools import cache
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -13,7 +12,7 @@ from .._vendor.shared_contracts.design_catalog import PublicOpticalCatalogV2
 from .._vendor.shared_contracts.optical_design import ProjectDocumentV2
 from . import PrescriptionImport, _contract_text, _import_models
 from .errors import PrescriptionErrorCode as E, PrescriptionImportError, SourceLocation, refuse
-from .glass import CatalogSource
+from .glass import CatalogSource, _Catalog
 from .illumination import sources
 from .zmx import read_zmx
 from .zmx_config import configuration_states
@@ -153,15 +152,15 @@ def read_prescription_project(path: str | Path, *, catalog: PublicOpticalCatalog
     if catalog is None:
         from ..local.catalog import load_public_catalog
         catalog = load_public_catalog
-    if callable(catalog):
-        catalog = cache(catalog)
+    # All configurations of this file resolve against the same lazily loaded release and name index.
+    materials = _Catalog(catalog, "catalog")
     text = _text(path)
     active, texts = configuration_states(text) if extension == ".zmx" else (1, [text])
     states = []
     for number, state_text in enumerate(texts, 1):
         try:
             rx = reader(state_text)
-            imported = _import_models(rx, catalog=catalog)
+            imported = _import_models(rx, catalog=materials)
             states.append((_standalone(imported), imported))
         except PrescriptionImportError as exc:
             if len(texts) == 1:

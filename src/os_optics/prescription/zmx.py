@@ -5,15 +5,18 @@ import hashlib
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from .._vendor.shared_contracts.design_catalog.material_physics import AIR_MODEL_BAND_NM
+from .._vendor.shared_contracts.design_catalog.material_physics import AIR_MODEL_BAND_NM, STANDARD_PRESSURE_PA, STANDARD_TEMPERATURE_C
+from .._vendor.shared_contracts.design_catalog.optical_catalog import MAX_ASPHERIC_TERMS
 from .errors import ImportWarning, PrescriptionErrorCode as E, SourceLocation, refuse
 from .ir import (
-    MM_PER_UNIT, UNIT_SPELLINGS, VACUUM_WAVELENGTH_QUANTUM_NM, CoatingRef, IrSagShape,
+    MM_PER_UNIT, NM_PER_UM, UNIT_SPELLINGS, VACUUM_WAVELENGTH_QUANTUM_NM, CoatingRef, IrSagShape,
     IrSurface, MaterialRef, ObjectSpace, Prescription, ReferenceEnvironment, WAVELENGTHS_AIR,
     air_to_vacuum_nm, power_to_mm, reciprocal, to_mm,
 )
 
 FORMAT_ID = ".zmx"
+_MAX_RECORD_INDEX = 1_000_000
+_MAX_DECIMAL_EXPONENT = 300
 # File, drawing, optimization and analysis settings which do not change the frozen sequential geometry.
 _HEADER_METADATA = set("VERS LANG NOTE PFIL SDMA OMMA ROPD PICB GLRS GSTD NSCD COFN HYPR LUID MAZH VOLF".split())
 _SURFACE_METADATA = set("COMM HIDE MIRR SLAB POPS".split())
@@ -42,13 +45,13 @@ class _Record:
             value = Decimal(token)
         except InvalidOperation:
             value = Decimal("NaN")
-        if not value.is_finite() or value and not -300 <= value.adjusted() <= 300:
+        if not value.is_finite() or value and abs(value.adjusted()) > _MAX_DECIMAL_EXPONENT:
             raise refuse(E.VALUE_INVALID, f"{self.key} expects a finite decimal, got {token!r}", self.where)
         return value
 
     def integer(self, index: int = 0) -> int:
         n = self.number(index)
-        if n != n.to_integral_value() or abs(n) > 1_000_000:
+        if n != n.to_integral_value() or abs(n) > _MAX_RECORD_INDEX:
             raise refuse(E.VALUE_INVALID, f"{self.key} expects an integer index or count", self.where)
         return int(n)
 
@@ -136,8 +139,8 @@ def _blocks(text: str) -> tuple[_Block, list[_Block]]:
 def _environment(header: _Block) -> ReferenceEnvironment:
     rec = header.get("ENVD")
     if rec is None:
-        return ReferenceEnvironment(Decimal(20), Decimal(101325))
-    temperature, pressure = rec.number(), rec.number(1) * 101325
+        return ReferenceEnvironment(STANDARD_TEMPERATURE_C, STANDARD_PRESSURE_PA)
+    temperature, pressure = rec.number(), rec.number(1) * STANDARD_PRESSURE_PA
     if temperature <= Decimal("-273.15") or pressure < 0:
         raise refuse(E.VALUE_INVALID, "invalid operating temperature or pressure", rec.where)
     if len(rec.args) > 2 and rec.number(2):
@@ -163,7 +166,7 @@ def _spectrum(header: _Block, count: int | None, env: ReferenceEnvironment):
         points = [(wav, wav.number(i), weights.number(i) if weights else Decimal(1)) for i in range(count)]
     spectrum, weights = [], []
     for record, um, weight in points:
-        nm = um * 1000
+        nm = um * NM_PER_UM
         if not AIR_MODEL_BAND_NM[0] <= nm <= AIR_MODEL_BAND_NM[1] or weight < 0:
             raise refuse(E.VALUE_INVALID, "wavelength is outside the reference air model or its weight is negative", record.where)
         vacuum = air_to_vacuum_nm(nm, env.temperature_c, env.pressure_pa)
@@ -250,13 +253,13 @@ def _surface(block: _Block, unit: str, warnings: list[ImportWarning]) -> IrSurfa
         radius = to_mm(inverse, unit)
         if not exact:
             warnings.append(ImportWarning("CONVERSION_ROUNDED", "the reciprocal curvature was rounded to 28 significant digits", block["CURV"].where))
-    asphere = [Decimal(0)] * 8
+    asphere = [Decimal(0)] * MAX_ASPHERIC_TERMS
     sag = None
     for i, param in block.indexed.get("PARM", {}).items():
         value = param.number(1)
         if not value:
             continue
-        if kind != "EVENASPH" or not 1 <= i <= 9:
+        if kind != "EVENASPH" or not 1 <= i <= 1 + MAX_ASPHERIC_TERMS:
             raise param.unsupported(f"parameter {i} has no supported mapping for {kind}")
         coeff, exact = power_to_mm(value, unit, 1 - 2 * i)
         if not exact:
