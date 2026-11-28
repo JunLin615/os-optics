@@ -33,11 +33,11 @@ telephoto = load_project(output).configured('config-3')
 
 The reference catalog carries the original six dispersion coefficients and specified wavelength band for each of the eleven named media. Seven use the three-term Sellmeier formula. The other four use the power series for squared index with exponents 0, 2, −2, −4, −6 and −8. Both take air wavelength in micrometres and give index relative to air. The calculation uses the nominal index formulas at the source's reference setting of 20 °C and 101325 Pa. Bulk attenuation and temperature variation are outside this first-order comparison.
 
-| Source catalog | Edition | Media | SHA-256 of input catalog |
-|---|---|---|---|
-| OHARA | 2018-10-19 | L-BAL42, S-BSL7, S-LAH55, S-LAH66, S-LAL14, S-NPH2, S-NPH53 | `6443303c43900b13f9af1fc0734776ab1dc22dc2aa7b502d382af550bd281a74` |
-| HOYA | 2017-04-01 | M-TAFD305, TAFD25, TAFD30 | `66b1682211329b5759217826a741ce8bdb174f227e9f2e766f255681582b1fa3` |
-| ZEON | Undated | E48R | `ecfca0d4d15d2cb7b46e629839f5fe2d5afb60e560ad0c368979a2293ad320cd` |
+| Edition | Glass or polymer designations | SHA-256 of input catalog |
+|---|---|---|
+| 2018-10-19 | L-BAL42, S-BSL7, S-LAH55, S-LAH66, S-LAL14, S-NPH2, S-NPH53 | `6443303c43900b13f9af1fc0734776ab1dc22dc2aa7b502d382af550bd281a74` |
+| 2017-04-01 | M-TAFD305, TAFD25, TAFD30 | `66b1682211329b5759217826a741ce8bdb174f227e9f2e766f255681582b1fa3` |
+| Undated | E48R | `ecfca0d4d15d2cb7b46e629839f5fe2d5afb60e560ad0c368979a2293ad320cd` |
 
 The source prescription has SHA-256 `2fbb782d18e01826d44912a34c720e935f813c20e89405c45b83a9130d6e617f`. The importer takes the three active wavelengths from `FTYP` and ignores the unused wavelength slots. The primary line is 587.5618 nm in air, or 587.721865 nm in vacuum.
 

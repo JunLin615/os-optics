@@ -28,6 +28,12 @@ def _reopen(filename, directory, catalog=None):
     return load_project(saved).payload()
 
 
+def _check_materials(doc, catalog, names, crystal_record):
+    expected = {m.material_id for m in catalog.materials if m.display_name in names and m.display_name != "CAF2"}
+    assert len(expected) == len(names) - 1
+    assert {m["copied_from"]["material_id"] for m in doc["model_materials"]} == expected | {crystal_record}
+
+
 def test_keck_cassegrain_returns_through_primary_hole(tmp_path):
     doc = _reopen("Keck_f13.zmx", tmp_path)
     optics = paraxial_analysis(doc, {"components": ["M1", "M2"], "wavelength_nm": 1000.269461})
@@ -56,7 +62,7 @@ def test_keck_cassegrain_returns_through_primary_hole(tmp_path):
 
 def test_mercado_finite_object_and_image(microscope_catalog, tmp_path):
     doc = _reopen("5000548a.zmx", tmp_path, microscope_catalog)
-    assert {m["copied_from"]["material_id"] for m in doc["model_materials"]} == {"HOYA_LAC7", "INFRARED_CAF2"}
+    _check_materials(doc, microscope_catalog, {"LAC7", "CAF2"}, "INFRARED_CAF2")
     assert doc["components"][1]["nominal_pose"]["position_mm"] == [0, 0.5, -12.893]
     z_image = doc["observations"][0]["pose"]["position_mm"][2]
     assert z_image == pytest.approx(185.048, abs=1e-8)
@@ -83,9 +89,8 @@ def test_mercado_finite_object_and_image(microscope_catalog, tmp_path):
 
 def test_reiley_dry_objective_signed_stop_and_five_degree_field(microscope_catalog, tmp_path):
     doc = _reopen("US04384765-1.zmx", tmp_path, microscope_catalog)
-    assert {m["copied_from"]["material_id"] for m in doc["model_materials"]} == {
-        "HOYA_E-FD1", "MISC_CAF2", "SCHOTT_BAF52", "SCHOTT_LAK31", "SCHOTT_N-SF56", "SCHOTT_N-SK11",
-        "SUMITA_LASFN16", "SUMITA_LASFN7"}
+    _check_materials(doc, microscope_catalog, {"CAF2", "E-FD1", "BAF52", "LAK31", "N-SF56", "N-SK11", "LASFN16", "LASFN7"},
+                     "MISC_CAF2")
     components = {c["instance_id"]: c for c in doc["components"]}
     z_stop = components["STOP"]["nominal_pose"]["position_mm"][2]
     assert components["L4"]["nominal_pose"]["position_mm"][2] - z_stop == pytest.approx(-0.02444761619235, abs=1e-12)

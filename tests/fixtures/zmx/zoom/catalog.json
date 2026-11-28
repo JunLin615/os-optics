@@ -14,7 +14,7 @@
         "catalogue_tags": [
           "ZEON"
         ],
-        "source_edition": "ZEON undated"
+        "source_edition": "undated"
       },
       "dispersion": {
         "kind": "POWER_SERIES",
@@ -41,7 +41,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "ZEON undated, original formula 1 for E48R.",
+      "basis": "Source dispersion formula 1.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -65,7 +65,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -86,7 +86,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for L-BAL42.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -110,7 +110,7 @@
         "catalogue_tags": [
           "HOYA"
         ],
-        "source_edition": "HOYA 2017-04-01"
+        "source_edition": "2017-04-01"
       },
       "dispersion": {
         "kind": "POWER_SERIES",
@@ -137,7 +137,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "HOYA 2017-04-01, original formula 1 for M-TAFD305.",
+      "basis": "Source dispersion formula 1.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -161,7 +161,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -182,7 +182,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-BSL7.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -206,7 +206,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -227,7 +227,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-LAH55.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -251,7 +251,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -272,7 +272,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-LAH66.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -296,7 +296,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -317,7 +317,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-LAL14.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -341,7 +341,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -362,7 +362,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-NPH2.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -386,7 +386,7 @@
         "catalogue_tags": [
           "OHARA-2018-10-19"
         ],
-        "source_edition": "OHARA 2018-10-19"
+        "source_edition": "2018-10-19"
       },
       "dispersion": {
         "kind": "SELLMEIER",
@@ -407,7 +407,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "OHARA 2018-10-19, original formula 2 for S-NPH53.",
+      "basis": "Source dispersion formula 2.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -431,7 +431,7 @@
         "catalogue_tags": [
           "HOYA"
         ],
-        "source_edition": "HOYA 2017-04-01"
+        "source_edition": "2017-04-01"
       },
       "dispersion": {
         "kind": "POWER_SERIES",
@@ -458,7 +458,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "HOYA 2017-04-01, original formula 1 for TAFD25.",
+      "basis": "Source dispersion formula 1.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",
@@ -482,7 +482,7 @@
         "catalogue_tags": [
           "HOYA"
         ],
-        "source_edition": "HOYA 2017-04-01"
+        "source_edition": "2017-04-01"
       },
       "dispersion": {
         "kind": "POWER_SERIES",
@@ -509,7 +509,7 @@
         "status": "SPECIFIED"
       },
       "status": "SPECIFIED",
-      "basis": "HOYA 2017-04-01, original formula 1 for TAFD30.",
+      "basis": "Source dispersion formula 1.",
       "index_reference": {
         "wavelength": "AIR",
         "index": "RELATIVE_TO_AIR",

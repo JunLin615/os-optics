@@ -62,13 +62,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SCHOTT glass catalogue, BAF52. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "BAF52",
         "catalogue_tags": [
           "SCHOTT"
         ],
-        "source_edition": "SCHOTT 2018-06-01",
+        "source_edition": "2018-06-01",
         "manufacturer": "SCHOTT"
       }
     },
@@ -107,13 +107,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "MISC glass catalogue, CAF2. Handbook of Optics Vol. II. Restricted to the visible test interval.",
+      "basis": "Handbook of Optics Vol. II. Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "CAF2",
         "catalogue_tags": [
           "MISC"
         ],
-        "source_edition": "MISC undated"
+        "source_edition": "undated"
       }
     },
     {
@@ -151,13 +151,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "INFRARED glass catalogue, CAF2. Handbook of Optics Vol. II. Restricted to the visible test interval.",
+      "basis": "Handbook of Optics Vol. II. Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "CAF2",
         "catalogue_tags": [
           "INFRARED"
         ],
-        "source_edition": "INFRARED 2019-01-23"
+        "source_edition": "2019-01-23"
       }
     },
     {
@@ -201,13 +201,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "HOYA glass catalogue, E-FD1. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "E-FD1",
         "catalogue_tags": [
           "HOYA"
         ],
-        "source_edition": "HOYA 2017-04-01",
+        "source_edition": "2017-04-01",
         "manufacturer": "HOYA"
       }
     },
@@ -252,13 +252,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "HOYA glass catalogue, LAC7. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "LAC7",
         "catalogue_tags": [
           "HOYA"
         ],
-        "source_edition": "HOYA 2017-04-01",
+        "source_edition": "2017-04-01",
         "manufacturer": "HOYA"
       }
     },
@@ -297,13 +297,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SCHOTT glass catalogue, LAK31. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "LAK31",
         "catalogue_tags": [
           "SCHOTT"
         ],
-        "source_edition": "SCHOTT 2018-06-01",
+        "source_edition": "2018-06-01",
         "manufacturer": "SCHOTT"
       }
     },
@@ -348,13 +348,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SUMITA glass catalogue, LASFN16. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "LASFN16",
         "catalogue_tags": [
           "SUMITA"
         ],
-        "source_edition": "SUMITA 2017-07-26",
+        "source_edition": "2017-07-26",
         "manufacturer": "SUMITA"
       }
     },
@@ -399,13 +399,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SUMITA glass catalogue, LASFN7. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "LASFN7",
         "catalogue_tags": [
           "SUMITA"
         ],
-        "source_edition": "SUMITA 2017-07-26",
+        "source_edition": "2017-07-26",
         "manufacturer": "SUMITA"
       }
     },
@@ -444,13 +444,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SCHOTT glass catalogue, N-SF56. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "N-SF56",
         "catalogue_tags": [
           "SCHOTT"
         ],
-        "source_edition": "SCHOTT 2018-06-01",
+        "source_edition": "2018-06-01",
         "manufacturer": "SCHOTT"
       }
     },
@@ -489,13 +489,13 @@
         "stated_by": "CATALOGUE_FORMAT"
       },
       "status": "SPECIFIED",
-      "basis": "SCHOTT glass catalogue, N-SK11. Reference fixture restricted to the visible test interval.",
+      "basis": "Source dispersion restricted to the visible test interval.",
       "identity": {
         "designation": "N-SK11",
         "catalogue_tags": [
           "SCHOTT"
         ],
-        "source_edition": "SCHOTT 2018-06-01",
+        "source_edition": "2018-06-01",
         "manufacturer": "SCHOTT"
       }
     }

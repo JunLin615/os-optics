@@ -38,7 +38,7 @@ See the [microscope and two-mirror reference traces](../ZMX_IMPORT.md) and the [
 
 ### Archive and session inputs
 
-A `.zda` stores analysis-window and display settings. Open the adjacent `.zmx` with the same stem. All 460 session files in the inspected sample directory had a matching prescription and the same eight-byte binary prefix. [Session-file reference](https://optics.ansys.com/hc/en-us/articles/43071101931411-What-are-the-ZDA-and-CFG-Files)
+A `.zda` stores analysis-window and display settings. Open the adjacent `.zmx` with the same stem. All 460 session files in the inspected sample directory had a matching prescription and the same eight-byte binary prefix.
 
 A `.zar` bundles a design with supporting files. Restore the archive locally, then open the extracted text `.zmx` with its matching materials. Nine public archives failed ZIP detection. They used two binary header versions and stored a compressed `.zmx.LZW` member with an ASCII or UTF-16LE name. Some packages include opaque component data that needs a separate surface export. The evaluated reader requires Python 3.13 and carries an AGPL-3.0-only license. A native archive reader would need member selection, dependency handling and verification against a paired text prescription. Mechanical CAD interchange is tracked separately in [Engine #92](https://github.com/JunLin615/os-optics/issues/92). [Archive reader and examples](https://github.com/tttom/zmxtools/tree/c14179f476af4dcac54a94e78b41135b3973360e)
 
