@@ -57,7 +57,7 @@ def test_the_detail_verifies_and_measures_the_plan(reference):
     verified = load_assembly_detail(detail_file_bytes(detail), package)
     values = {d.kind.value + ":" + d.axis.value: verified.measured[d.dim_ref].value_mm for d in detail.dimensions}
     assert values["OPTICAL_AXIS_HEIGHT:WORLD_Z"] == pytest.approx(fx.LENS_AT[2])
-    assert values["INSERTION_DEPTH:WORLD_Z"] == pytest.approx(-20.0) or values["INSERTION_DEPTH:WORLD_Z"] == pytest.approx(20.0)
+    assert values["INSERTION_DEPTH:WORLD_Z"] == pytest.approx(20.0)  # post bottom -> bore top
     assert values["FIXATION_OFFSET:WORLD_X"] == pytest.approx(fx.SLOT_OFFSET)
     assert detail.customer_supplied_models == ()
     assert setting_bases_of(rev)[("pst-1", "INSERTION_DEPTH")] == "RESOLVED"
