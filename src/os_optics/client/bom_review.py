@@ -32,11 +32,20 @@ A review file also names the purchase request it belongs to, so a confirmation i
   ``confirmed_changes`` or the editable ``proposed_confirmation``);
 * ``round``: 1 for the review of a BOM quote, ``n + 1`` for the review written in answer to the confirmation of a
   round-``n`` review (when supply changed again). A later round copies ``bom_request_sha256`` of the file it confirmed,
-  so it still names the original BOM.
+  so it still names the original BOM;
+* ``earlier_decisions``: the decisions of each confirmation sent before the one in ``submitted``, one list per
+  confirmation in order (empty for the first and the second review). With the decisions of ``submitted`` they are
+  every change made to the BOM's lines so far.
 
-``check_review_binding(BOM, REVIEW)`` refuses a review file of another BOM (``CONFIRMATION_BOM_MISMATCH``) and one
-without these fields (``CONFIRMATION_NOT_POSSIBLE``: quote the BOM again). ``review_out_problem`` refuses a review
-output path that is one of the command's input files (``REVIEW_OUT_COLLISION``), whatever its spelling.
+``check_review_binding(BOM, REVIEW)`` refuses a review file of another BOM (``CONFIRMATION_BOM_MISMATCH``), one whose
+``submitted`` body is not that BOM -- for the first review the BOM's normal form itself, for a later one the BOM's
+lines with the recorded decisions applied, line by line (same line ids, in the BOM's order; every change a recorded
+decision) -- (``details.reason`` ``REVIEW_INCONSISTENT``), and one without these fields (``CONFIRMATION_NOT_POSSIBLE``:
+quote the BOM again). ``review_out_problem`` refuses a review output path that is one of the command's input files, or
+whose temporary name (``.<name>.partial`` beside it, which the writer replaces) is one, whatever its spelling
+(``REVIEW_OUT_COLLISION``); ``review_out_unwritable`` refuses one that cannot be created: its directory is missing or is
+not a directory, or the temporary name cannot be created there (``REVIEW_OUT_UNWRITABLE``, probed by creating and
+removing that name exclusively).
 
 Version ``1`` (``--schema-version 1``, for a service before BOM-only ordering) is the earlier part-list body: line ids
 are filled in (``L1..Ln``) when no line states one, ``mechanical_supply`` is ``NONE``, and a line with a ``purpose``
@@ -46,12 +55,14 @@ cannot be sent (spare units are then added to the quantities by the BOM writer).
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ..local.submission import canonical_json_bytes
+from ..output_files import staged_path
 from .errors import LocalInputError, Recovery
 
 PART_LIST_SCHEMA = "opensci.commercial.part_list_submission"
@@ -77,13 +88,20 @@ CONFIRMATION_INCONSISTENT = "CONFIRMATION_INCONSISTENT"
 CONFIRMATION_NOT_POSSIBLE = "CONFIRMATION_NOT_POSSIBLE"
 CONFIRMATION_BOM_MISMATCH = "CONFIRMATION_BOM_MISMATCH"
 REVIEW_OUT_COLLISION = "REVIEW_OUT_COLLISION"
-#: ``CONFIRMATION_BOM_MISMATCH`` of a round-1 review whose ``submitted`` BOM is not the BOM it names.
+REVIEW_OUT_UNWRITABLE = "REVIEW_OUT_UNWRITABLE"
+#: The ``details.reason`` of a ``CONFIRMATION_BOM_MISMATCH`` whose review's ``submitted`` body is not the BOM it names.
 REVIEW_INCONSISTENT = "REVIEW_INCONSISTENT"
-#: The ``reason`` of a ``REVIEW_OUT_COLLISION``.
+#: The ``reason`` of a ``REVIEW_OUT_COLLISION`` (``details.staged_path`` when it is the temporary name that collides).
 SAME_AS_BOM = "SAME_AS_BOM"
 SAME_AS_REVIEW = "SAME_AS_REVIEW"
 IS_DIRECTORY = "IS_DIRECTORY"
+#: The ``reason`` of a ``REVIEW_OUT_UNWRITABLE``.
+PARENT_MISSING = "PARENT_MISSING"
+PARENT_NOT_A_DIRECTORY = "PARENT_NOT_A_DIRECTORY"
+NOT_CREATABLE = "NOT_CREATABLE"
 FIRST_ROUND = 1
+#: The permissions of the temporary file ``review_out_unwritable`` creates and removes at once (readable by its owner only).
+PROBE_FILE_MODE = 0o600
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
@@ -203,19 +221,26 @@ def _line_key(line: Mapping[str, Any]) -> tuple[Any, Any, Any, Any]:
 
 
 def review_document(submitted: Mapping[str, Any], review: Mapping[str, Any], resolution_id: str | None, *,
-                    bom_request_sha256: str | None = None, round_number: int = FIRST_ROUND) -> dict[str, Any]:
+                    bom_request_sha256: str | None = None, round_number: int = FIRST_ROUND,
+                    earlier_decisions: Sequence[Sequence[Mapping[str, Any]]] = ()) -> dict[str, Any]:
     """The review file (module docstring): with ``resolution_id`` (a persisted CHANGES_REQUIRED quote) a proposed
     confirmation that keeps every OK line and removes every changed one; without it (no line could be supplied) none.
     ``submitted`` is the body that was sent; ``bom_request_sha256`` the request the review belongs to (default: the
-    digest of ``submitted``, which is right for the first review only); ``round_number`` its ``round``."""
+    digest of ``submitted``, which is right for the first review only); ``round_number`` its ``round``;
+    ``earlier_decisions`` the decisions of the confirmations sent before ``submitted`` (``next_earlier_decisions`` of
+    the review file confirmed)."""
 
     if not isinstance(round_number, int) or isinstance(round_number, bool) or round_number < FIRST_ROUND:
         raise ValueError("round_number is a whole number of at least 1")
     if round_number > FIRST_ROUND and bom_request_sha256 is None:
         raise ValueError("a later round names the BOM of the first round (bom_request_sha256)")
+    if len(earlier_decisions) != max(round_number - 2, 0):
+        raise ValueError("a round-n review records the decisions of the n - 2 confirmations before its submitted one")
     digest = bom_request_sha256 if bom_request_sha256 is not None else bom_request_digest(submitted)
     document: dict[str, Any] = {"schema": REVIEW_SCHEMA, "schema_version": REVIEW_SCHEMA_VERSION, "resolution_id": resolution_id,
                                 "bom_request_sha256": digest, "round": round_number,
+                                "earlier_decisions": [[dict(decision) for decision in decisions]
+                                                      for decisions in earlier_decisions],
                                 "submitted": dict(submitted), "bom_review": dict(review)}
     if resolution_id is not None:
         lines = [{"line_id": line["line_id"], "opensci_sku": line["opensci_sku"], "quantity": line["quantity"],
@@ -294,13 +319,81 @@ def review_round(review_file: Mapping[str, Any]) -> int:
     return int(review_file["round"])
 
 
+def _decisions_of(body: Any) -> list[Any] | None:
+    changes = body.get("confirmed_changes") if isinstance(body, Mapping) else None
+    decisions = changes.get("decisions") if isinstance(changes, Mapping) else None
+    return list(decisions) if isinstance(decisions, list) else None
+
+
+def next_earlier_decisions(review_file: Mapping[str, Any]) -> list[list[dict[str, Any]]]:
+    """The ``earlier_decisions`` of the review that answers the confirmation of ``review_file`` (one that
+    ``check_review_binding`` accepted): its own, then -- after the first review -- the decisions of its ``submitted``
+    confirmation."""
+
+    if review_round(review_file) == FIRST_ROUND:
+        return []
+    return [*([dict(decision) for decision in decisions] for decisions in review_file.get("earlier_decisions", ())),
+            [dict(decision) for decision in _decisions_of(review_file["submitted"]) or ()]]
+
+
+def _replayed_lines(bom_document: Mapping[str, Any], rounds: Sequence[Any]) -> list[tuple] | None:
+    """The BOM's lines (normal form) with each confirmation's decisions applied in order, as line keys; None when a
+    decision names no current line, repeats a line within its confirmation, or is not a decision."""
+
+    current = {line["line_id"]: dict(line) for line in bom_normal_form(bom_document)["lines"]}
+    for decisions in rounds:
+        if not isinstance(decisions, list):
+            return None
+        seen: set[Any] = set()
+        for decision in decisions:
+            line_id = decision.get("line_id") if isinstance(decision, Mapping) else None
+            kind = decision.get("decision") if isinstance(decision, Mapping) else None
+            if not isinstance(line_id, str) or line_id not in current or line_id in seen or kind not in DECISIONS:
+                return None
+            seen.add(line_id)
+            quantity = decision.get("quantity")
+            if kind == "REMOVED":
+                del current[line_id]
+                continue
+            if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
+                return None
+            current[line_id]["quantity"] = quantity
+            if kind == "SUBSTITUTED":
+                sku = decision.get("opensci_sku")
+                if not isinstance(sku, str) or not sku:
+                    return None
+                current[line_id]["opensci_sku"] = sku
+    return [_line_key(line) for line in current.values()]
+
+
+def _submitted_is_the_bom(bom_document: Mapping[str, Any], review_file: Mapping[str, Any], round_number: int) -> bool:
+    """Whether the review's ``submitted`` body is the request of ``bom_document`` (module docstring)."""
+
+    submitted = review_file.get("submitted")
+    if not isinstance(submitted, Mapping):
+        return False
+    try:
+        if round_number == FIRST_ROUND:
+            return bom_request_digest(submitted) == bom_request_digest(bom_document)
+        lines = purchase_bom_body(submitted, schema_version="2")["lines"]
+    except LocalInputError:
+        return False
+    earlier, own = review_file.get("earlier_decisions", []), _decisions_of(submitted)
+    if not isinstance(earlier, list) or len(earlier) != round_number - 2 or own is None:
+        return False
+    if any("line_id" not in line for line in lines):
+        return False
+    return _replayed_lines(bom_document, [*earlier, own]) == [_line_key(line) for line in lines]
+
+
 def check_review_binding(bom_document: Mapping[str, Any], review_file: Any) -> None:
     """Refuse a review file that does not belong to the purchase request of ``bom_document`` (nothing is sent):
     ``CONFIRMATION_NOT_POSSIBLE`` for a file that is not a review file, one without ``bom_request_sha256`` / ``round``
     (written by an earlier os-optics) or without a stored quote (``resolution_id`` null); ``CONFIRMATION_BOM_MISMATCH``
     for a review of another BOM (``details.bom_request_sha256`` of this BOM, ``details.review_bom_request_sha256``), or
-    a round-1 review whose ``submitted`` BOM is not the one it names (``details.reason`` ``REVIEW_INCONSISTENT``). The
-    BOM itself is checked before (``purchase_bom_body``); the confirmation's own check is ``confirmation_body``."""
+    a review whose ``submitted`` body is not that BOM: the BOM itself for the first review, the BOM's lines changed by
+    the recorded decisions for a later one (``details.reason`` ``REVIEW_INCONSISTENT``). The BOM itself is checked
+    before (``purchase_bom_body``); the confirmation's own check is ``confirmation_body``."""
 
     if not isinstance(review_file, Mapping) or review_file.get("schema") != REVIEW_SCHEMA:
         raise _not_possible(f"the file is not a review file ({REVIEW_SCHEMA}) written by 'os-optics order quote'")
@@ -318,38 +411,69 @@ def check_review_binding(bom_document: Mapping[str, Any], review_file: Any) -> N
         raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file belongs to another BOM than the one named; "
                               "nothing was sent", details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded},
                               recovery=Recovery.FIX_REQUEST)
-    if round_number == FIRST_ROUND:
-        submitted = review_file.get("submitted")
-        try:
-            consistent = isinstance(submitted, Mapping) and bom_request_digest(submitted) == recorded
-        except LocalInputError:
-            consistent = False
-        if not consistent:
-            raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file's submitted BOM is not the BOM it names "
-                                  "(the file was edited); nothing was sent",
-                                  details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded,
-                                           "reason": REVIEW_INCONSISTENT},
-                                  recovery=Recovery.FIX_REQUEST)
+    if not _submitted_is_the_bom(bom_document, review_file, round_number):
+        raise LocalInputError(CONFIRMATION_BOM_MISMATCH, "the review file's submitted body is not the BOM it names "
+                              + ("" if round_number == FIRST_ROUND else "with the recorded decisions applied ")
+                              + "(the file was edited); nothing was sent",
+                              details={"bom_request_sha256": digest, "review_bom_request_sha256": recorded,
+                                       "reason": REVIEW_INCONSISTENT, "round": round_number},
+                              recovery=Recovery.FIX_REQUEST)
+
+
+def _same_file(path: Path, other: str | Path) -> bool:
+    if os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(other)):
+        return True
+    try:
+        return path.exists() and path.samefile(other)
+    except OSError:
+        return False
 
 
 def review_out_problem(out: str | Path, inputs: Mapping[str, str | Path]) -> dict[str, Any] | None:
-    """Why the review file cannot be written to ``out``, or None: ``out`` is an existing directory (``IS_DIRECTORY``)
-    or the same file as one of ``inputs`` (``{reason: path}``, e.g. ``{SAME_AS_BOM: BOM.json}``), whatever the
-    spelling (relative or absolute, ``./`` and ``..``, the case of a case-insensitive file system, a symbolic or hard
-    link: ``Path.samefile`` compares the files themselves). A path that does not exist yet is no input."""
+    """Why the review file cannot be written to ``out`` without touching an input, or None: ``out`` is an existing
+    directory (``IS_DIRECTORY``), or ``out`` or its temporary name (``output_files.staged_path``, which the writer
+    deletes and creates; ``details.staged_path``) is one of ``inputs`` (``{reason: path}``, e.g. ``{SAME_AS_BOM:
+    BOM.json}``), whatever the spelling: the same absolute name (``./`` and ``..`` resolved, the case of Windows), or
+    the same file (``Path.samefile``: the case of a case-insensitive file system, a symbolic or hard link)."""
 
     target = Path(out)
-    if target.is_dir():
+    if os.path.isdir(target):
         return {"review_out": str(out), "reason": IS_DIRECTORY}
-    if not target.exists():
+    staged = staged_path(target)
+    for written, extra in ((target, {}), (staged, {"staged_path": str(staged)})):
+        for reason, path in inputs.items():
+            if _same_file(written, path):
+                return {"review_out": str(out), "reason": reason, "input": str(path), **extra}
+    return None
+
+
+def review_out_unwritable(out: str | Path) -> dict[str, Any] | None:
+    """Why the review file cannot be created at ``out``, or None: its directory does not exist (``PARENT_MISSING``) or
+    is not a directory (``PARENT_NOT_A_DIRECTORY``), or its temporary name cannot be created there (``NOT_CREATABLE``,
+    ``details.error``: a name the file system cannot hold, a directory that cannot be written). The probe creates the
+    temporary name exclusively and removes it at once; a temporary file an earlier attempt left is not touched (the
+    writer replaces it). Call it after ``review_out_problem``, which makes sure that name is no input."""
+
+    target = Path(out)
+    parent = target.parent
+    details: dict[str, Any] = {"review_out": str(out), "directory": str(parent)}
+    if not os.path.lexists(parent):
+        return {**details, "reason": PARENT_MISSING}
+    if not os.path.isdir(parent):
+        return {**details, "reason": PARENT_NOT_A_DIRECTORY}
+    staged = staged_path(target)
+    if os.path.isdir(staged):
+        return {**details, "reason": NOT_CREATABLE, "staged_path": str(staged), "error": "IsADirectoryError"}
+    if os.path.lexists(staged):
         return None
-    for reason, path in inputs.items():
-        try:
-            same = target.samefile(path)
-        except OSError:
-            same = False
-        if same:
-            return {"review_out": str(out), "reason": reason, "input": str(path)}
+    try:
+        os.close(os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PROBE_FILE_MODE))
+    except (OSError, ValueError) as exc:
+        return {**details, "reason": NOT_CREATABLE, "staged_path": str(staged), "error": type(exc).__name__}
+    try:
+        os.unlink(staged)
+    except OSError as exc:
+        return {**details, "reason": NOT_CREATABLE, "staged_path": str(staged), "error": type(exc).__name__}
     return None
 
 
@@ -390,6 +514,7 @@ __all__ = [
     "CONFIRMATION_NOT_POSSIBLE",
     "ORDERABLE",
     "REVIEW_OUT_COLLISION",
+    "REVIEW_OUT_UNWRITABLE",
     "REVIEW_SCHEMA",
     "bom_normal_form",
     "bom_request_digest",
@@ -397,9 +522,11 @@ __all__ = [
     "check_review_binding",
     "confirmation_body",
     "confirmation_problems",
+    "next_earlier_decisions",
     "purchase_bom_body",
     "review_document",
     "review_of",
     "review_out_problem",
+    "review_out_unwritable",
     "review_round",
 ]

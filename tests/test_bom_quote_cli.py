@@ -18,7 +18,7 @@ from os_optics.assembly_plan.schemas import BomReviewV1
 from os_optics.cli import main
 from os_optics.client import OpenSciClient, canonical_json_bytes, idempotency_key_for
 from os_optics.client.bom_review import bom_request_digest, confirmation_problems, purchase_bom_body
-from os_optics.client.shell_words import command_line
+from os_optics.client.shell_words import command_path, printed_command
 from test_commerce_cli import token_file
 from test_commerce_client import AGENT, new_state
 
@@ -96,8 +96,13 @@ def test_changed_lines_are_reviewed_confirmed_and_only_then_ordered(env, capsys,
     review_path = tmp_path / "plan-bom.review.json"
     assert code == 1 and quote["status"] == "CHANGES_REQUIRED" and quote["review"] == str(review_path)
     assert [(l["line_id"], l["status"]) for l in quote["changed_lines"]] == [("L3", "NOT_ORDERABLE")]
-    next_argv = ["os-optics", "order", "quote", str(bom), "--schema-version", "2", "--confirm", str(review_path)]
-    assert quote["next_argv"] == next_argv and quote["next_command"] == command_line(next_argv) and quote["round"] == 1
+    next_argv = ["os-optics", "order", "quote", command_path(bom), "--schema-version", "2", "--confirm",
+                 command_path(review_path)]
+    assert quote["next_argv"] == next_argv and quote["round"] == 1  # (no --json: the first call had none)
+    assert (quote["next_command"], quote["next_shells"], quote["next_commands"]) == tuple(printed_command(next_argv))
+    code, again = cli(capsys, "order", "quote", str(bom), "--json")  # the same request: a replay, the same review
+    assert code == 1 and again["replayed"] is True and again["next_argv"] == [*next_argv, "--json"]
+    assert again["response"]["resolution_id"] == quote["resolution_id"]
     review = json.loads(review_path.read_text(encoding="utf-8"))
     assert review["schema"] == "os-optics.bom_review" and review["resolution_id"] == quote["resolution_id"]
     assert review["round"] == 1 and review["bom_request_sha256"] == bom_request_digest(json.loads(bom.read_text("utf-8")))
@@ -192,7 +197,8 @@ def test_service_refusals_of_a_confirmation_carry_their_hint(env, capsys, stub, 
     stub.state.bom_reviews.clear()
     code, gone = cli(capsys, "order", "quote", str(bom), "--confirm", str(review_path))
     assert code == 67 and gone["error"]["code"] == "RESOLUTION_NOT_FOUND"
-    assert f"quote the BOM again (os-optics order quote {bom})" in gone["error"]["hint"]
+    requote = printed_command(["os-optics", "order", "quote", command_path(bom)])[0]
+    assert f"quote the BOM again ({requote})" in gone["error"]["hint"]
     # the service's own check refuses (here: the named quote needs no changes, a review file edited by hand)
     code, fresh = cli(capsys, "order", "quote", str(write_bom(tmp_path / "ok.json", [{"opensci_sku": OPTIC, "quantity": 3}])))
     assert code == 0
@@ -453,10 +459,11 @@ def test_second_confirmation_round_end_to_end(env, capsys, stub, tmp_path):
     second = tmp_path / "bom.review-2.json"
     assert code == 1 and quote["status"] == "CHANGES_REQUIRED" and quote["review"] == str(second) and quote["round"] == 2
     assert [(l["line_id"], l["status"]) for l in quote["changed_lines"]] == [("L2", "TEMPORARILY_UNAVAILABLE")]
-    assert quote["next_argv"][-2:] == ["--confirm", str(second)]
+    assert quote["next_argv"][-2:] == ["--confirm", command_path(second)]
     round2 = json.loads(second.read_text("utf-8"))
     c1 = round1["proposed_confirmation"]
     assert round2["round"] == 2 and round2["bom_request_sha256"] == round1["bom_request_sha256"]
+    assert round1["earlier_decisions"] == round2["earlier_decisions"] == []
     assert round2["submitted"] == c1 and round2["resolution_id"] == quote["resolution_id"]
     assert round2["bom_review"]["confirmed_changes"]["reviewed_resolution_id"] == round1["resolution_id"]
     for document in (round1, round2):  # both files are os-optics.bom_review 1.0 documents (os-optics schema bom-review)
@@ -569,3 +576,227 @@ def test_a_confirmation_answered_with_no_suppliable_line_writes_a_later_round_th
     sent = len(stub.state.requests)
     code, impossible = cli(capsys, "order", "quote", str(bom), "--confirm", str(second))
     assert code == 65 and impossible["error"]["code"] == "CONFIRMATION_NOT_POSSIBLE" and len(stub.state.requests) == sent
+
+
+# ---- the review output is checked before sending: its temporary name and whether it can be created (#120) -----------
+
+def _no_partial_left(folder: Path) -> bool:
+    return not [path for path in folder.rglob(".*.partial")]
+
+
+@pytest.mark.parametrize("kind", ["bom-by-name", "bom-hardlink", "confirm-by-name", "confirm-default-name"])
+def test_review_out_whose_temporary_name_is_an_input_is_refused_before_sending(env, capsys, stub, tmp_path, monkeypatch,
+                                                                               kind):
+    """The writer deletes and creates ``.<name>.partial`` beside the review file: an input under that name (or a link
+    to an input there) is refused before anything is sent, and stays as it was."""
+
+    monkeypatch.chdir(tmp_path)
+    if kind.startswith("bom"):
+        stub.state.bom_unavailable = {POST}  # the service would answer CHANGES_REQUIRED
+        bom = write_bom(tmp_path / ("bom.json" if kind == "bom-hardlink" else ".out.json.partial"), THREE)
+        if kind == "bom-hardlink":
+            os.link(bom, tmp_path / ".out.json.partial")
+        protected, argv = bom, ["order", "quote", bom.name, "--review-out", "out.json"]
+        reason = "SAME_AS_BOM"
+    else:
+        bom, first = quoted_with_changes(capsys, stub, tmp_path / "bom.json")
+        stub.state.bom_unavailable = {MOUNT}  # the confirmation would be answered with a round-2 review
+        protected = tmp_path / (".r2.json.partial" if kind == "confirm-by-name" else ".bom.review-2.json.partial")
+        protected.write_bytes(first.read_bytes())
+        argv = ["order", "quote", "bom.json", "--confirm", protected.name]
+        argv += ["--review-out", "r2.json"] if kind == "confirm-by-name" else []  # (else the default bom.review-2.json)
+        reason = "SAME_AS_REVIEW"
+    original = protected.read_bytes()
+    stub.state.requests.clear()
+    code, refused = cli(capsys, *argv)
+    assert code == 64 and refused["error"]["code"] == "REVIEW_OUT_COLLISION"
+    details = refused["error"]["details"]
+    staged = ".out.json.partial" if kind.startswith("bom") else protected.name
+    assert details["reason"] == reason and Path(details["staged_path"]).name == staged
+    assert stub.state.requests == [] and protected.read_bytes() == original
+    if kind == "bom-hardlink":
+        assert (tmp_path / ".out.json.partial").read_bytes() == original
+
+
+def _unwritable(kind: str, tmp_path: Path) -> str:
+    if kind == "missing-directory":
+        return str(tmp_path / "missing_dir" / "r.json")
+    if kind == "file-as-directory":
+        return str(tmp_path / "bom.json" / "r.json")
+    if kind == "name-too-long":
+        return str(tmp_path / ("x" * 300 + ".json"))
+    assert kind == "windows-reserved-character"
+    if os.name != "nt":
+        pytest.skip("only Windows refuses ? in a file name")
+    return str(tmp_path / "what?.json")
+
+
+@pytest.mark.parametrize("kind", ["missing-directory", "file-as-directory", "name-too-long", "windows-reserved-character"])
+def test_review_out_that_cannot_be_created_is_refused_before_sending(env, capsys, stub, tmp_path, kind):
+    stub.state.bom_unavailable = {POST}  # the service would answer CHANGES_REQUIRED
+    bom = write_bom(tmp_path / "bom.json", THREE)
+    original = bom.read_bytes()
+    out = _unwritable(kind, tmp_path)
+    code, refused = cli(capsys, "order", "quote", str(bom), "--review-out", out)
+    assert code == 64 and refused["error"]["code"] == "REVIEW_OUT_UNWRITABLE", refused
+    assert refused["error"]["details"]["reason"] == {"missing-directory": "PARENT_MISSING",
+                                                     "file-as-directory": "PARENT_NOT_A_DIRECTORY"}.get(kind, "NOT_CREATABLE")
+    assert "nothing was sent" in refused["error"]["message"]
+    assert stub.state.requests == [] and bom.read_bytes() == original
+    assert not (tmp_path / "missing_dir").exists() and _no_partial_left(tmp_path)
+    # the same with --confirm: nothing is sent either
+    _, first = quoted_with_changes(capsys, stub, bom, THREE)
+    stub.state.requests.clear()
+    code, refused = cli(capsys, "order", "quote", str(bom), "--confirm", str(first), "--review-out", out)
+    assert code == 64 and refused["error"]["code"] == "REVIEW_OUT_UNWRITABLE" and stub.state.requests == []
+
+
+def test_the_probe_leaves_nothing_behind_and_a_leftover_temporary_file_is_replaced(env, capsys, stub, tmp_path, monkeypatch):
+    stub.state.bom_unavailable = {POST}
+    bom = write_bom(tmp_path / "bom.json", THREE)
+    monkeypatch.delenv("OPENSCI_TOKEN_FILE")  # refused after the probe (no token): nothing sent, nothing left
+    assert cli(capsys, "order", "quote", str(bom))[0] == 77
+    assert stub.state.requests == [] and _no_partial_left(tmp_path) and not (tmp_path / "bom.review.json").exists()
+    monkeypatch.setenv("OPENSCI_TOKEN_FILE", str(token_file(tmp_path / "agent-token", AGENT)))
+    (tmp_path / ".bom.review.json.partial").write_text("left by an attempt that was stopped", encoding="utf-8")
+    code, quote = cli(capsys, "order", "quote", str(bom))
+    assert code == 1 and json.loads((tmp_path / "bom.review.json").read_text("utf-8"))["round"] == 1
+    assert _no_partial_left(tmp_path)
+
+
+def test_a_review_file_that_cannot_be_written_after_sending_still_names_the_quote(env, capsys, stub, tmp_path, monkeypatch):
+    """The fallback: a write failure after the request was sent prints the answer (the resolution_id of the stored
+    quote) under exit 73, never exit 64 ("nothing sent"); the same command with another --review-out replays it."""
+
+    from os_optics import output_files
+
+    stub.state.bom_unavailable = {POST}
+    bom = write_bom(tmp_path / "bom.json", THREE)
+    original = bom.read_bytes()
+
+    def failing(directory, files):
+        raise PermissionError(13, "Permission denied")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(output_files, "replace_files", failing)
+        code, answer = cli(capsys, "order", "quote", str(bom))
+    assert code == 73 and answer["status"] == "CHANGES_REQUIRED" and answer["resolution_id"]
+    assert answer["review"] is None and answer["review_error"]["code"] == "REVIEW_NOT_WRITTEN"
+    assert answer["review_error"]["error"] == "PermissionError" and "next_command" not in answer
+    assert [(l["line_id"], l["status"]) for l in answer["changed_lines"]] == [("L3", "TEMPORARILY_UNAVAILABLE")]
+    assert len(posts(stub)) == 1 and bom.read_bytes() == original
+    out = tmp_path / "elsewhere.review.json"
+    code, again = cli(capsys, "order", "quote", str(bom), "--review-out", str(out))
+    assert code == 1 and again["replayed"] is True and again["resolution_id"] == answer["resolution_id"]
+    assert json.loads(out.read_text("utf-8"))["resolution_id"] == answer["resolution_id"]
+    # no line suppliable: the refusal is printed with review_error, under exit 73 as well
+    stub.state.bom_unavailable = {OPTIC, MOUNT, POST}
+    other = write_bom(tmp_path / "other.json", [{**line, "quantity": 2} for line in THREE])
+    with monkeypatch.context() as patched:
+        patched.setattr(output_files, "replace_files", failing)
+        code, refused = cli(capsys, "order", "quote", str(other))
+    assert code == 73 and refused["error"]["code"] == "BOM_NOT_ORDERABLE" and refused["review"] is None
+    assert refused["review_error"]["code"] == "REVIEW_NOT_WRITTEN"
+
+
+# ---- a later review's submitted body is bound to the BOM as well (#122) ----------------------------------------------
+
+FOUR = [*THREE, {"line_id": "L4", "opensci_sku": "OS-MECH-PH-40", "quantity": 1}]
+
+
+def test_third_confirmation_round_with_edited_decisions_end_to_end(env, capsys, stub, tmp_path):
+    """The first confirmation removes L3, the second substitutes L2, the third removes L4: each later review records the decisions before
+    its submitted one, the binding replays them on the BOM, and the last confirmation is ordered."""
+
+    bom, first = quoted_with_changes(capsys, stub, tmp_path / "bom.json", FOUR)
+    stub.state.bom_unavailable = {MOUNT}
+    assert cli(capsys, "order", "quote", str(bom), "--confirm", str(first))[0] == 1
+    second = tmp_path / "bom.review-2.json"
+
+    def substitute(document):
+        proposed = document["proposed_confirmation"]
+        proposed["confirmed_changes"]["decisions"] = [{"line_id": "L2", "decision": "SUBSTITUTED",
+                                                       "opensci_sku": "OS-OPT-MIRROR", "quantity": 2}]
+        proposed["lines"].insert(1, {"line_id": "L2", "opensci_sku": "OS-OPT-MIRROR", "quantity": 2, "purpose": "PLAN"})
+
+    edit_review(second, second, substitute)
+    stub.state.bom_unavailable = {"OS-MECH-PH-40"}
+    code, quote = cli(capsys, "order", "quote", str(bom), "--confirm", str(second))
+    third = tmp_path / "bom.review-3.json"
+    assert code == 1 and quote["round"] == 3 and quote["review"] == str(third)
+    round1, round2 = json.loads(first.read_text("utf-8")), json.loads(second.read_text("utf-8"))
+    round3 = BomReviewV1.model_validate(json.loads(third.read_text("utf-8")))
+    assert round3.earlier_decisions == [round1["proposed_confirmation"]["confirmed_changes"]["decisions"]]
+    assert round3.submitted == round2["proposed_confirmation"]
+    assert [(l["line_id"], l["opensci_sku"]) for l in round3.submitted["lines"]] == [
+        ("L1", OPTIC), ("L2", "OS-OPT-MIRROR"), ("L4", "OS-MECH-PH-40")]
+    stub.state.bom_unavailable = set()
+    code, confirmed = cli(capsys, "order", "quote", str(bom), "--confirm", str(third))
+    assert code == 0 and confirmed["status"] == "ORDERABLE"
+    assert json.loads(posts(stub)[-1]["body"]) == round3.proposed_confirmation
+    code, placed = cli(capsys, "order", "create", confirmed["resolution_id"])
+    assert code == 0
+
+
+def test_later_review_whose_submitted_lines_come_from_another_bom_is_refused(env, capsys, stub, tmp_path):
+    a = write_bom(tmp_path / "a.json", THREE)
+    b, b_first = quoted_with_changes(capsys, stub, tmp_path / "b.json", [{**line, "quantity": 2} for line in THREE])
+    stub.state.bom_unavailable = {MOUNT}
+    assert cli(capsys, "order", "quote", str(b), "--confirm", str(b_first))[0] == 1
+    b_second = tmp_path / "b.review-2.json"
+    a_digest = bom_request_digest(json.loads(a.read_text("utf-8")))
+
+    def copied_digest(document):  # B's round-2 review with A's digest copied over
+        document["bom_request_sha256"] = a_digest
+
+    def a_shaped(document):  # A's digest and a submitted body changed to A's quantities, decisions kept
+        document["bom_request_sha256"] = a_digest
+        for line in document["submitted"]["lines"]:
+            line["quantity"] = 1
+
+    def unrecorded_change(document):  # A-shaped, but a line left out that no decision removes
+        a_shaped(document)
+        document["submitted"]["lines"] = document["submitted"]["lines"][:1]
+
+    def unknown_decision(document):  # A-shaped, with a decision for a line A does not have
+        a_shaped(document)
+        document["submitted"]["confirmed_changes"]["decisions"].append({"line_id": "L9", "decision": "REMOVED"})
+
+    a_bytes, sent = a.read_bytes(), len(stub.state.requests)
+    for name, edit in (("copied", copied_digest), ("unrecorded", unrecorded_change), ("unknown", unknown_decision)):
+        forged = edit_review(b_second, tmp_path / f"{name}.json", edit)
+        code, refused = cli(capsys, "order", "quote", str(a), "--confirm", str(forged))
+        assert code == 65 and refused["error"]["code"] == "CONFIRMATION_BOM_MISMATCH", name
+        assert refused["error"]["details"]["reason"] == "REVIEW_INCONSISTENT" and refused["error"]["details"]["round"] == 2
+    assert len(stub.state.requests) == sent and a.read_bytes() == a_bytes
+    # the A-shaped submission is what A's own second confirmation would have been: it passes the binding (the service checks the
+    # quote it names)
+    passes = edit_review(b_second, tmp_path / "a-shaped.json", a_shaped)
+    from os_optics.client.bom_review import check_review_binding
+
+    check_review_binding(json.loads(a.read_text("utf-8")), json.loads(passes.read_text("utf-8")))
+
+
+def test_later_review_with_tampered_earlier_decisions_is_refused(env, capsys, stub, tmp_path):
+    bom, first = quoted_with_changes(capsys, stub, tmp_path / "bom.json", FOUR)
+    stub.state.bom_unavailable = {MOUNT}
+    assert cli(capsys, "order", "quote", str(bom), "--confirm", str(first))[0] == 1
+    stub.state.bom_unavailable = {"OS-MECH-PH-40"}
+    assert cli(capsys, "order", "quote", str(bom), "--confirm", str(tmp_path / "bom.review-2.json"))[0] == 1
+    third = tmp_path / "bom.review-3.json"
+    sent = len(stub.state.requests)
+
+    def forgotten(document):  # the removal of L3 in the first confirmation is no longer recorded
+        document["earlier_decisions"] = [[]]
+
+    def dropped(document):
+        del document["earlier_decisions"]
+
+    def unknown_line(document):
+        document["earlier_decisions"] = [[{"line_id": "L9", "decision": "REMOVED"}]]
+
+    for edit in (forgotten, dropped, unknown_line):
+        code, refused = cli(capsys, "order", "quote", str(bom), "--confirm",
+                            str(edit_review(third, tmp_path / f"{edit.__name__}.json", edit)))
+        assert code == 65 and refused["error"]["details"]["reason"] == "REVIEW_INCONSISTENT", edit.__name__
+    assert len(stub.state.requests) == sent

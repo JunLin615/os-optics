@@ -2037,20 +2037,41 @@ looked up or anything is sent:
 - a missing or unreadable BOM or review file: `INPUT_FILE_UNREADABLE` (`details.argument`, `details.reason`), exit 64;
 - a review of another BOM: `CONFIRMATION_BOM_MISMATCH`, exit 65; a review file without the binding (written before it
   existed): `CONFIRMATION_NOT_POSSIBLE`, exit 65 -- quote the BOM again;
+- a review whose `submitted` body is not that BOM: `CONFIRMATION_BOM_MISMATCH` with `details.reason`
+  `REVIEW_INCONSISTENT`, exit 65. For the first review `submitted` is the BOM itself; for a later one it is the
+  confirmation that was sent, and it must be the BOM's lines with the recorded decisions applied (the same line ids
+  in the BOM's order, every change a decision of `earlier_decisions` or of `submitted` itself);
 - the proposed confirmation is checked by the service's rule (`CONFIRMATION_INCONSISTENT`, exit 65). Editing its
   decisions and lines is how a person changes a quantity or substitutes a part number;
 - a `--review-out` that is the BOM or the `--confirm` file, under any spelling (relative or absolute, `./`, `..`, case,
-  a symbolic or hard link), or a directory: `REVIEW_OUT_COLLISION`, exit 64.
+  a symbolic or hard link), or a directory: `REVIEW_OUT_COLLISION`, exit 64. The review file is written to a
+  temporary name beside it first (`.<name>.partial`); an input under that name is refused the same way
+  (`details.staged_path`);
+- a `--review-out` that cannot be created: its directory is missing (`PARENT_MISSING`) or is not a directory
+  (`PARENT_NOT_A_DIRECTORY`), or the file system cannot create the name there (`NOT_CREATABLE`, checked by creating
+  and removing the temporary name): `REVIEW_OUT_UNWRITABLE`, exit 64.
+
+If the review file still cannot be written after the request was sent, the command prints the answer -- with the
+`resolution_id` of a stored quote -- and `review_error` (`REVIEW_NOT_WRITTEN`), and exits 73. Run the same command
+again with a `--review-out` that can be written: it sends the same request, replays the same quote and writes its
+review.
 
 When supply changes again, the confirmation is answered with a new review, `bom.review-2.json` (round 2, the same
-`bom_request_sha256`); confirm it with the same BOM (`order quote bom.json --confirm bom.review-2.json`). Running the
-same confirmation again sends the same body with the same key, so it replays the same quote.
+`bom_request_sha256`); confirm it with the same BOM (`order quote bom.json --confirm bom.review-2.json`). A review of
+round 3 or later also records the decisions of the confirmations sent before its `submitted` one
+(`earlier_decisions`). Running the same confirmation again sends the same body with the same key, so it replays the
+same quote.
 
 Without a token, `details.handoff` carries the command to resume with: `resume_argv` (the argument list: the BOM, the
-`--confirm` and `--review-out` files as absolute paths, `--schema-version`, `--api-url` and `--json` when given),
-`resume_shell` (`posix` or `powershell`) and `resume_command`, the list quoted for that shell -- PowerShell on Windows,
-sh elsewhere; `cmd.exe` is not supported. After sign-in it sends the same body with the same idempotency key. The
-`next_command` of a review is quoted the same way (`next_argv`, `next_shell`).
+`--confirm` and `--review-out` files as absolute paths -- written with `/` on Windows -- `--schema-version`, `--api-url`
+and `--json` when given), `resume_command` and `resume_shells`, the shells that text is quoted for, and
+`resume_commands`, the text for each shell of the device (`posix`: sh, bash, Git Bash; on Windows also
+`powershell`). On Windows one text serves both PowerShell and sh whenever one exists -- a path with an apostrophe
+included; only an argument that holds a single quote (`'` or a typographic one) together with one of `` $ ` " \ ! `` or
+a typographic double quote has none, and then `resume_command` is the PowerShell text and `resume_commands.posix` the
+sh text. `cmd.exe` is not supported. After sign-in it sends the
+same body with the same idempotency key. The `next_command` of a review is printed the same way (`next_argv`,
+`next_shells`, `next_commands`) and keeps `--json` when it was given.
 From Python: `client.quote_bom(document)` (`os_optics.client.purchase_bom_body`, `review_of`, `review_document`,
 `confirmation_body`).
 

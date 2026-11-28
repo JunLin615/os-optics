@@ -17,9 +17,10 @@ Without a token, ``resolve_token`` raises ``TOKEN_MISSING`` whose ``details.hand
 (``account_handoff``): the OpenSci Account registration and sign-in pages, which return to the token page
 (``<account>/register?next=%2Ftokens``, ``<account>/login?next=%2Ftokens``; ``<account>`` is ``OPENSCI_ACCOUNT_URL``, a base
 URL that may carry a path, else the packaged default), the token file to save the new token to, and the command to run
-again (filled in by the command that needed the token with ``resume_with``: ``resume_argv``, the argument list,
-``resume_shell``, the shell it is quoted for -- ``posix`` or ``powershell`` (``shell_words``) -- and ``resume_command``,
-the list quoted for that shell). ``handoff_text`` is the same as text.
+again (filled in by the command that needed the token with ``resume_with``: ``resume_argv``, the argument list;
+``resume_command``, the list quoted for the shells in ``resume_shells`` -- ``posix`` and, on Windows, ``powershell``
+(``shell_words.printed_command``); and ``resume_commands``, the text for each shell of the device). ``handoff_text`` is
+the same as text.
 """
 
 from __future__ import annotations
@@ -120,21 +121,23 @@ def account_base_url(environ: Mapping[str, str] | None = None) -> str:
 def account_handoff(environ: Mapping[str, str] | None = None, *, home: Path | None = None,
                     resume_command: str | None = None) -> dict[str, Any]:
     """How a person without a token gets one and continues: ``{register_url, login_url, token_file, resume_command,
-    resume_argv, resume_shell}`` (see the module docstring; the last three are None until ``resume_with``)."""
+    resume_argv, resume_shells, resume_commands}`` (see the module docstring; the last four are None until
+    ``resume_with``)."""
 
     base = account_base_url(environ)
     return {"register_url": f"{base}/register?next={TOKENS_RETURN_PATH}", "login_url": f"{base}/login?next={TOKENS_RETURN_PATH}",
             "token_file": str(default_token_file(home)), "resume_command": resume_command, "resume_argv": None,
-            "resume_shell": None}
+            "resume_shells": None, "resume_commands": None}
 
 
-def resume_with(handoff: dict[str, Any], argv: list[str], shell: str | None = None) -> dict[str, Any]:
-    """``handoff`` with the command to resume with: ``resume_argv`` (``argv``), ``resume_shell`` (``shell``, default the
-    shell of this device) and ``resume_command`` (``argv`` quoted for it)."""
+def resume_with(handoff: dict[str, Any], argv: list[str], shells: list[str] | None = None) -> dict[str, Any]:
+    """``handoff`` with the command to resume with: ``resume_argv`` (``argv``), ``resume_command`` (``argv`` quoted for
+    every shell in ``resume_shells`` when one text serves them all), ``resume_shells`` and ``resume_commands`` (the
+    text for each of ``shells``, default the shells of this device: ``shell_words.printed_command``)."""
 
-    shell = shell or shell_words.device_shell()
-    handoff.update(resume_argv=[str(argument) for argument in argv], resume_shell=shell,
-                   resume_command=shell_words.command_line(argv, shell))
+    text, quoted_for, texts = shell_words.printed_command(argv, shells)
+    handoff.update(resume_argv=[str(argument) for argument in argv], resume_command=text, resume_shells=quoted_for,
+                   resume_commands=texts)
     return handoff
 
 
@@ -144,10 +147,17 @@ def handoff_text(handoff: Mapping[str, Any], *, kept: str | None = None, repeat_
 
     kept_text = f"; your {kept}" if kept else ""
     resume = handoff.get("resume_command") or "the command you ran"
+    shells = handoff.get("resume_shells") or []
+    texts = handoff.get("resume_commands") or {}
     lines = [f"No OpenSci Account token on this device. Nothing was sent{kept_text}.",
              f"1. Register:  {handoff['register_url']}   (or sign in: {handoff['login_url']})",
-             f"2. Create an Agent token there and save it to {handoff['token_file']} (or set {ENV_TOKEN_FILE}).",
-             f"3. Resume with the same command:  {resume}"]
+             f"2. Create an Agent token there and save it to {handoff['token_file']} (or set {ENV_TOKEN_FILE})."]
+    if shells:
+        lines.append(f"3. Resume with the same command (quoted for {shell_words.shells_text(shells)}):  {resume}")
+        lines += [f"   In {shell_words.SHELL_NAMES[shell]}:  {text}" for shell, text in texts.items()
+                  if shell not in shells and shell in shell_words.SHELL_NAMES]
+    else:
+        lines.append(f"3. Resume with the same command:  {resume}")
     if repeat_note:
         lines.append(repeat_note)
     return "\n".join(lines) + "\n"

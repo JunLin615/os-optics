@@ -83,6 +83,9 @@ class BomReviewV1(StrictContractModel):
                                              "a later round copies it from the review it confirmed.")
     round: StrictInt = Field(ge=1, description="1 for the review of a BOM quote; n + 1 for the review answering the "
                                                "confirmation of a round-n review.")
+    earlier_decisions: list[list[dict[str, Any]]] = Field(
+        default_factory=list, description="The decisions of each confirmation sent before the one in submitted, one list "
+                                          "per confirmation in order (empty for the first and the second review).")
     submitted: dict[str, Any] = Field(description="The body as sent.")
     bom_review: dict[str, Any] = Field(description="The service's line review, verbatim.")
     proposed_confirmation: dict[str, Any] | None = Field(default=None, description="A purchase BOM with confirmed_changes.")

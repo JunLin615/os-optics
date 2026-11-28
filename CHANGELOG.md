@@ -47,12 +47,17 @@ Earlier releases are summarized in `src/os_optics/_version.py` and on
   locally before it is sent. The review file names the BOM it belongs to (`bom_request_sha256`, `round`):
   `--confirm` with another BOM, a missing BOM or an unbound review is refused before anything is sent
   (`CONFIRMATION_BOM_MISMATCH`, `INPUT_FILE_UNREADABLE`, `CONFIRMATION_NOT_POSSIBLE`). A confirmation answered with
-  new changes writes the next round (`BOM.review-2.json`), confirmed the same way. `--review-out` never replaces an
-  input file (`REVIEW_OUT_COLLISION`, checked before sending).
+  new changes writes the next round (`BOM.review-2.json`), confirmed the same way; a later review's `submitted`
+  confirmation must be the BOM with the recorded decisions applied (`earlier_decisions`; `REVIEW_INCONSISTENT`
+  otherwise). `--review-out` never replaces an input file, directly or through its temporary name
+  (`REVIEW_OUT_COLLISION`), and one that cannot be created is refused (`REVIEW_OUT_UNWRITABLE`), both before sending; a
+  review that cannot be written after sending still prints the answer and its `resolution_id` (exit 73).
 - **Account handoff without a token:** the registration and sign-in URLs (`OPENSCI_ACCOUNT_URL`), the token location
-  and the resume command (`resume_argv`, and `resume_command` quoted for PowerShell on Windows or sh elsewhere). It
-  keeps every option that changes the request (`--schema-version`, `--confirm`, `--review-out`, `--api-url`, `--json`)
-  with absolute paths. The same BOM gives the same idempotency key.
+  and the resume command (`resume_argv`; `resume_command` with `resume_shells`, the shells it is quoted for -- sh, and
+  on Windows PowerShell and sh with one text whenever one exists, paths written with `/`; `resume_commands` per
+  shell). It keeps every option that changes the request (`--schema-version`, `--confirm`, `--review-out`,
+  `--api-url`, `--json`) with absolute paths; the `next_command` of a review is printed the same way and keeps
+  `--json`. The same BOM gives the same idempotency key.
 - **JSON API 1.9:**
   - new methods `derive_assembly_plan`, `check_assembly_plan`, `apply_assembly_plan_ops`, `assembly_plan_preview`,
     `assembly_plan_drawing`, `assembly_plan_bom` and `mechanical_catalog`;

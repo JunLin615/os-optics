@@ -61,7 +61,7 @@ The quote reviews every line. The result is one of these:
 - **Some lines cannot be supplied as listed** (`CHANGES_REQUIRED`, exit 1). A line may not be an orderable OpenSci product, may be temporarily unavailable, or may ask for more units than one line allows. The output lists those lines and writes `bom.review.json`. That file proposes to keep the other lines and to remove the changed ones. You can edit its decisions: for example, a smaller quantity for a line above the limit, or another part number. Then send it with `os-optics order quote bom.json --confirm bom.review.json`. The quote cannot be ordered until its changes are confirmed.
   - The review file records the BOM it was written for. `--confirm` needs that same BOM: a review of another BOM, or a BOM file that does not exist, is refused before anything is sent (`CONFIRMATION_BOM_MISMATCH`, `INPUT_FILE_UNREADABLE`).
   - If supply changes again before you confirm, the answer is a new review, `bom.review-2.json`. Confirm it the same way, with the same BOM: `os-optics order quote bom.json --confirm bom.review-2.json`.
-  - The review file is never written over the BOM or the file you confirm (`REVIEW_OUT_COLLISION`; nothing is sent).
+  - The review file is never written over the BOM or the file you confirm (`REVIEW_OUT_COLLISION`; nothing is sent). A `--review-out` in a folder that does not exist, or that cannot be created, is refused too (`REVIEW_OUT_UNWRITABLE`; nothing is sent).
 - **No line can be supplied** (`BOM_NOT_ORDERABLE`, exit 67). The review file is written, nothing is stored, and you change the BOM before quoting again.
 
 `--schema-version 1` sends the earlier part-list form to a service that does not quote BOMs yet. That form has no `purpose` and no confirmation.

@@ -27,10 +27,11 @@ a command-line value. Every command prints one JSON document on stdout; a refusa
   purchase BOM (OpenSci part numbers and quantities, e.g. from ``assembly plan bom PLAN --purchase``) with OpenSci's line
   review; changed lines are confirmed with ``--confirm`` before ordering (``os_optics.client.bom_review``). Exit 0 =
   every line orderable (next: ``order create RESOLUTION_ID``), 1 = changes to confirm (the review file is written), 64 =
-  an unreadable input file or a review output that is an input (nothing sent), 65 = a BOM or confirmation refused
-  locally, a review of another BOM included (nothing sent), 67 = refused by the service, 77 = no token (the BOM stays in
-  its file; the output says how to register or sign in and the exact command to resume with, quoted for this device's
-  shell, and as an argument list);
+  an unreadable input file or a review output that is an input or cannot be created (nothing sent), 65 = a BOM or
+  confirmation refused locally, a review of another BOM included (nothing sent), 67 = refused by the service, 73 = sent
+  and answered, but the review file could not be written (the output names the quote), 77 = no token (the BOM stays in
+  its file; the output says how to register or sign in and the exact command to resume with, quoted for the shells it
+  names, and as an argument list);
 * ``resolve-parts PARTS.json [--mechanics none|derived]``: price a part list (the version-1 body; ``order quote`` is its
   successor, and the BOM-only service refuses derived mechanics with ``ORDER_OPTION_RETIRED``);
 * ``products mechanical [--kind MOUNT|POST|POST_HOLDER|BREADBOARD] [--json]``: OpenSci's mechanical part numbers and
@@ -97,6 +98,11 @@ TOKEN_LIFECYCLES = ("single-use", "time-limited", "permanent")
 HTTP_SERVER_ERROR = 500
 #: ``order quote``: the review needs changes confirmed before ordering (the review file is written).
 QUOTE_CHANGES_REQUIRED = 1
+#: ``order quote``: the request was sent and answered, but the review file could not be written (sysexits
+#: ``EX_CANTCREAT``); the output names the stored quote, and the same command with another ``--review-out`` replays it.
+QUOTE_REVIEW_NOT_WRITTEN = 73
+#: ``review_error.code`` of that answer.
+REVIEW_NOT_WRITTEN = "REVIEW_NOT_WRITTEN"
 BOM_SCHEMA_VERSION_CHOICES = ("2", "1")
 REVIEW_SUFFIX = ".review.json"
 #: ``order quote``: an input file that cannot be read (``details.argument`` / ``details.reason``; exit 64).
@@ -293,20 +299,27 @@ QUOTE_DESCRIPTION = (
     "supply changed again, the confirmation is answered with a new review (the second one is BOM.review-2.json, and so on), "
     "confirmed the same way with the same BOM. No line suppliable: BOM_NOT_ORDERABLE, the review file is written, nothing "
     "is stored. The confirmation is checked here first (CONFIRMATION_INCONSISTENT, nothing sent). The review file is "
-    "never written over the BOM or the --confirm file (REVIEW_OUT_COLLISION, nothing sent). Without a token nothing is "
+    "never written over the BOM or the --confirm file, nor through a temporary name that is one of them "
+    "(REVIEW_OUT_COLLISION), and a review output whose directory is missing or that cannot be created is refused "
+    "(REVIEW_OUT_UNWRITABLE); both before anything is sent. Without a token nothing is "
     "sent: the output names the Account registration and sign-in pages and the token file, and the command to resume "
-    "with (details.handoff.resume_command, quoted for this device's shell -- PowerShell on Windows, sh elsewhere -- and "
-    "resume_argv, the same as an argument list): the same BOM, review and output files as absolute paths and the same "
-    "--schema-version, so it sends the same request; repeating it never creates a second quote. --schema-version 1 sends "
+    "with (details.handoff.resume_command, quoted for every shell in resume_shells -- sh, and on Windows also "
+    "PowerShell, with paths written with / there; resume_commands has the text for each shell when one text cannot "
+    "serve both -- and resume_argv, the same as an argument list): the same BOM, review and output files as absolute "
+    "paths, the same --schema-version and --json, so it sends the same request; repeating it never creates a second "
+    "quote. The next_command of a review is printed the same way (next_shells, next_commands, next_argv). --schema-version 1 sends "
     "the earlier part-list body for a service before BOM-only ordering (line ids filled in, no purpose, no confirmation). "
     + CONNECTION_HELP
 )
 QUOTE_EXIT_HELP = (
     "exit codes: 0 = every line orderable, 1 = changes to confirm (review file written), 64 = usage error, unreadable "
-    "file (INPUT_FILE_UNREADABLE) or a review output that is an input (REVIEW_OUT_COLLISION); nothing sent, "
+    "file (INPUT_FILE_UNREADABLE), a review output that is an input (REVIEW_OUT_COLLISION) or cannot be created "
+    "(REVIEW_OUT_UNWRITABLE); nothing sent, "
     "65 = BOM or confirmation refused locally, e.g. a review of another BOM (nothing sent), 67 = refused by the OpenSci "
     "service (BOM_NOT_ORDERABLE writes "
-    "the review file), 69 = the service is unreachable or unavailable, 77 = no token (see the handoff), 78 = OPENSCI_API_URL "
+    "the review file), 69 = the service is unreachable or unavailable, 73 = the request was sent and answered but the "
+    "review file could not be written (review_error; a stored quote's resolution_id is printed: run the same command with "
+    "another --review-out, which replays it), 77 = no token (see the handoff), 78 = OPENSCI_API_URL "
     "is not set or not usable"
 )
 ORDER_DESCRIPTION = (
@@ -879,6 +892,15 @@ def _write_review(target: Path, document: dict[str, Any]) -> Path:
     return target
 
 
+def _review_error(target: Path, exc: OSError) -> dict[str, Any]:
+    """``review_error`` of an answer whose review file could not be written after the request was sent (exit 73)."""
+
+    return {"code": REVIEW_NOT_WRITTEN, "review_out": str(target), "error": type(exc).__name__,
+            "message": f"the review file could not be written to {target} ({type(exc).__name__}: {exc.strerror or exc}); "
+                       "the request was sent: run the same command again with --review-out naming a file that can be "
+                       "written -- it sends the same request, which replays the same answer, and writes the review"}
+
+
 def _quote_input(path: str, argument: str) -> Any:
     """An input file of ``order quote`` as JSON; ``LocalInputError`` ``INPUT_FILE_UNREADABLE`` (``details.argument``,
     ``details.reason``: ``NOT_FOUND``, ``NOT_A_FILE``, ``NOT_READABLE``, ``NOT_UTF8`` or ``NOT_JSON``) otherwise."""
@@ -909,13 +931,15 @@ def _quote_input(path: str, argument: str) -> Any:
 def _quote_argv(bom: str, *, schema_version: str, confirm: str | None = None, review_out: str | None = None,
                 api_url: str | None = None, as_json: bool = False) -> list[str]:
     """The argument list of an ``order quote`` command (``RESUME_PRESERVED``, in that order), its paths absolute so it
-    runs from any directory."""
+    runs from any directory (``shell_words.command_path``: written with ``/`` on Windows)."""
 
-    argv = ["os-optics", "order", "quote", str(Path(bom).absolute()), "--schema-version", schema_version]
+    from .client.shell_words import command_path
+
+    argv = ["os-optics", "order", "quote", command_path(bom), "--schema-version", schema_version]
     if confirm:
-        argv += ["--confirm", str(Path(confirm).absolute())]
+        argv += ["--confirm", command_path(confirm)]
     if review_out:
-        argv += ["--review-out", str(Path(review_out).absolute())]
+        argv += ["--review-out", command_path(review_out)]
     if api_url:
         argv += ["--api-url", api_url]
     if as_json:
@@ -936,19 +960,20 @@ def _order_quote(args: argparse.Namespace) -> int:
 
     from .client import LocalInputError, OpenSciApiError, OpenSciConfigurationError, Recovery
     from .client.bom_review import (CHANGES_REQUIRED, CONFIRMATION_BOM_MISMATCH, IS_DIRECTORY, ORDERABLE,
-                                    REVIEW_OUT_COLLISION, SAME_AS_BOM, SAME_AS_REVIEW, bom_request_digest, changed_lines,
-                                    check_review_binding, confirmation_body, purchase_bom_body, review_document, review_of,
-                                    review_out_problem, review_round)
+                                    PARENT_MISSING, PARENT_NOT_A_DIRECTORY, REVIEW_OUT_COLLISION, REVIEW_OUT_UNWRITABLE,
+                                    SAME_AS_BOM, SAME_AS_REVIEW, bom_request_digest, changed_lines, check_review_binding,
+                                    confirmation_body, next_earlier_decisions, purchase_bom_body, review_document,
+                                    review_of, review_out_problem, review_out_unwritable, review_round)
     from .client.credentials import resume_with
     from .client.errors import (BOM_CONFIRMATION_INVALID, BOM_NOT_ORDERABLE, RESOLUTION_NOT_FOUND, RETIREMENT_CODES,
                                 TOKEN_MISSING)
-    from .client.shell_words import command_line, device_shell
+    from .client.shell_words import command_path, printed_command
 
     if args.confirm and args.schema_version == "1":
         print("error: --confirm sends a confirmed BOM in schema version 2; leave out --schema-version 1", file=sys.stderr)
         return USAGE_ERROR
     bom = Path(args.bom)
-    requote = command_line(["os-optics", "order", "quote", str(bom.absolute())])
+    requote = printed_command(["os-optics", "order", "quote", command_path(bom)])[0]
     # phase A: local checks, nothing resolved or sent
     try:
         bom_document = _quote_input(args.bom, "BOM.json")
@@ -967,16 +992,28 @@ def _order_quote(args: argparse.Namespace) -> int:
         body = confirmation_body(review_file)
         round_number = review_round(review_file) + 1
         request_digest = review_file["bom_request_sha256"]
+        earlier = next_earlier_decisions(review_file)
     else:
-        body, round_number, request_digest = bom_body, 1, bom_request_digest(bom_document)
+        body, round_number, request_digest, earlier = bom_body, 1, bom_request_digest(bom_document), []
     review_out = Path(args.review_out) if args.review_out else _review_path(bom, round_number)
     inputs = {SAME_AS_BOM: bom, **({SAME_AS_REVIEW: Path(args.confirm)} if args.confirm else {})}
     collision = review_out_problem(review_out, inputs)
     if collision is not None:
         return _local_refusal(LocalInputError(
             REVIEW_OUT_COLLISION, f"the review file would be written to {review_out}, which is "
-            + ("a directory" if collision["reason"] == IS_DIRECTORY else f"the input file {collision['input']}")
+            + ("a directory" if collision["reason"] == IS_DIRECTORY else f"the input file {collision['input']}"
+               if "staged_path" not in collision else
+               f"written through the temporary file {collision['staged_path']}, which is the input file "
+               f"{collision['input']}")
             + "; name another --review-out (nothing was sent)", details=collision, recovery=Recovery.FIX_REQUEST))
+    unwritable = review_out_unwritable(review_out)
+    if unwritable is not None:
+        why = {PARENT_MISSING: f"its directory {unwritable['directory']} does not exist",
+               PARENT_NOT_A_DIRECTORY: f"{unwritable['directory']} is not a directory"}.get(
+            unwritable["reason"], f"the file cannot be created there ({unwritable.get('error')})")
+        return _local_refusal(LocalInputError(
+            REVIEW_OUT_UNWRITABLE, f"the review file cannot be written to {review_out}: {why}; name another --review-out "
+            "(nothing was sent)", details=unwritable, recovery=Recovery.FIX_REQUEST))
     # phase B: the token (a missing one hands off with the command that sends this same request)
     kept = f"BOM stays in {args.bom}"
     try:
@@ -994,8 +1031,14 @@ def _order_quote(args: argparse.Namespace) -> int:
     except OpenSciApiError as exc:
         review = exc.details.get("bom_review") if exc.code == BOM_NOT_ORDERABLE else None
         if isinstance(review, dict):
-            written = _write_review(review_out, review_document(body, review, None, bom_request_sha256=request_digest,
-                                                                round_number=round_number))
+            try:
+                written = _write_review(review_out, review_document(body, review, None, bom_request_sha256=request_digest,
+                                                                    round_number=round_number, earlier_decisions=earlier))
+            except OSError as write_error:
+                exc.local_hint = "No line of this BOM can be supplied now; change the BOM and quote it again."
+                _out({"status": "ERROR", "error": exc.as_dict(), "review": None,
+                      "review_error": _review_error(review_out, write_error)})
+                return QUOTE_REVIEW_NOT_WRITTEN
             exc.local_hint = (f"No line of this BOM can be supplied now (the review is in {written}); change the BOM and "
                               "quote it again.")
             _out({"status": "ERROR", "error": exc.as_dict(), "review": str(written)})
@@ -1019,15 +1062,28 @@ def _order_quote(args: argparse.Namespace) -> int:
                                "customer_bom": resolution.get("customer_bom")}
     code = 0
     if status == CHANGES_REQUIRED:
-        written = _write_review(review_out, review_document(body, review, resolution_id, bom_request_sha256=request_digest,
-                                                            round_number=round_number))
-        next_argv = _quote_argv(args.bom, schema_version="2", confirm=str(written), api_url=args.api_url)
-        summary.update(changed_lines=changed_lines(review), review=str(written), round=round_number,
-                       message="Some lines cannot be supplied as listed: show them to the person, adjust the proposed "
-                               "confirmation in the review file if they want, then confirm it; this quote cannot be "
-                               "ordered before.",
-                       next_command=command_line(next_argv), next_argv=next_argv, next_shell=device_shell())
-        code = QUOTE_CHANGES_REQUIRED
+        summary.update(changed_lines=changed_lines(review), round=round_number)
+        try:
+            written = _write_review(review_out, review_document(body, review, resolution_id,
+                                                                bom_request_sha256=request_digest,
+                                                                round_number=round_number, earlier_decisions=earlier))
+        except OSError as write_error:
+            summary.update(review=None, review_error=_review_error(review_out, write_error),
+                           message="Some lines cannot be supplied as listed, and the quote was stored (resolution_id), "
+                                   "but its review file could not be written (review_error): run the same command again "
+                                   "with --review-out naming a file that can be written; it replays this quote.")
+            code = QUOTE_REVIEW_NOT_WRITTEN
+        else:
+            next_argv = _quote_argv(args.bom, schema_version="2", confirm=str(written), api_url=args.api_url,
+                                    as_json=args.json)
+            next_command, next_shells, next_commands = printed_command(next_argv)
+            summary.update(review=str(written),
+                           message="Some lines cannot be supplied as listed: show them to the person, adjust the "
+                                   "proposed confirmation in the review file if they want, then confirm it; this quote "
+                                   "cannot be ordered before.",
+                           next_command=next_command, next_shells=next_shells, next_commands=next_commands,
+                           next_argv=next_argv)
+            code = QUOTE_CHANGES_REQUIRED
     else:
         summary["next_command"] = f"os-optics order create {resolution_id}"
     if args.json:
