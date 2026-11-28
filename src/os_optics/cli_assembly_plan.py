@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ DEFAULT_TABLE_THREAD = "M6"
 #: Mechanical codes of a file that cannot be read (a usage error, not a refused input).
 UNREADABLE_CODES = ("MECHANICAL_FILE_UNREADABLE",)
 SUMMARY_SEVERITIES = ("ERROR", "UNKNOWN", "WARNING")
+#: A thread the plan's interface designations can carry (``InterfaceDesignation``).
+DESIGNATION = re.compile(r"^[A-Za-z0-9.\-x]+$")
 
 PLAN_DESCRIPTION = (
     "A local assembly plan of a Project: which mount, post, holder and board hole hold each optic, who supplies each "
@@ -145,6 +148,10 @@ def _derive(args: argparse.Namespace) -> int:
     if args.beam_height_mm is not None:
         options["beam_height_mm"] = args.beam_height_mm
     if args.customer_table:
+        if DESIGNATION.fullmatch(args.table_thread) is None:
+            _note(f"error: --table-thread {args.table_thread!r}: write the thread with letters, digits, '.', '-' or 'x' "
+                  "(e.g. M6, or 1-4-20 for 1/4-20)")
+            return USAGE_ERROR
         options["customer_table"] = {"size_x_mm": args.customer_table[0], "size_y_mm": args.customer_table[1],
                                      "pitch_mm": args.table_pitch_mm, "edge_offset_mm": args.table_edge_offset_mm,
                                      "thread": args.table_thread}

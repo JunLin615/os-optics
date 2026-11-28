@@ -128,3 +128,14 @@ def test_assembly_draw_of_a_plan_package_takes_its_design_bom(tmp_path, project_
                        "--design-bom", str(tmp_path / "design.json"), mechanical=None)
     assert code == 0 and doc["delivery_ready"] is True
     assert (tmp_path / "again" / "assembly_drawing.svg").read_bytes() == (tmp_path / "first" / "assembly_drawing.svg").read_bytes()
+
+
+def test_a_thread_the_designations_cannot_carry_is_a_usage_error_not_a_crash(tmp_path, project_file):
+    code, _, err = run("assembly", "plan", "derive", str(project_file), "--out", str(tmp_path / "plan"), "--customer-table", "600",
+                       "300", "--table-thread", "1/4-20")
+    assert code == 64 and "--table-thread" in err
+    run("assembly", "plan", "derive", str(project_file), "--out", str(tmp_path / "plan"))
+    table = {"size_x_mm": 600.0, "size_y_mm": 300.0, "pitch_mm": 25.4, "edge_offset_mm": 12.7, "thread": "1/4-20"}
+    code, doc, _ = run("assembly", "plan", "edit", str(tmp_path / "plan"), "--op",
+                       json.dumps({"op": "set_board", "customer_table": table}))
+    assert code == 65 and doc["error"]["code"] == "PLAN_OP_INVALID" and doc["error"]["details"]["op_code"] == "OP_MALFORMED"

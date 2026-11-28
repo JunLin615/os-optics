@@ -751,8 +751,8 @@ def apply_ops(base: AssemblyPlanContentV1 | AssemblyPlanRevisionV1, project: Pro
         touched_before, retired_before = set(edit.touched), set(edit.retired)
         changed_project = edit.project_changed
         edit.project_changed = False
-        OPS[op.op](edit, op)
         try:
+            OPS[op.op](edit, op)
             edit.model  # (every op leaves valid decisions)
         except ValueError as exc:
             raise op_error(index, PlanOpErrorCode.OP_MALFORMED, f"the op leaves an invalid plan: {str(exc)[:MAX_MESSAGE]}") from None
