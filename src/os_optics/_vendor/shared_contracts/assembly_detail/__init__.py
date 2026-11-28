@@ -9,6 +9,10 @@
   measured from the preview's own poses;
 * ``drawing`` -- ``AssemblyDrawingResultV1`` and ``AssemblyDrawingManifestV1``: what a local runtime's generated
   drawing shows, and the local output manifest (SVG, PDF, result) that an artifact upload carries.
+
+Detail 3.2 and drawing 4.2 are the supplement and the drawing of a preview package with the LOCAL_PLAN binding
+(generated on the user's device from a local assembly plan): they bind the local plan revision instead of a commercial
+resolution and its Customer Purchase BOM, and the drawing's parts legend is the plan's design BOM.
 """
 
 from .detail import (
@@ -16,9 +20,12 @@ from .detail import (
     ASSEMBLY_DETAIL_MEDIA_TYPE,
     ASSEMBLY_DETAIL_SCHEMA_ID,
     ASSEMBLY_DETAIL_SCHEMA_VERSION,
+    ASSEMBLY_DETAIL_SCHEMA_VERSION_3_2,
+    ASSEMBLY_DETAIL_SCHEMA_VERSIONS,
     AXIS_INDEX,
     DETAIL_PERMITTED_USES,
     DETAIL_USAGE_STATEMENT,
+    LOCAL_DETAIL_USAGE_STATEMENT,
     MAX_DETAIL_BYTES,
     MAX_DIMENSIONS,
     AssemblyDetailPackageV1,
@@ -30,18 +37,23 @@ from .detail import (
     DimensionBasisV1,
     DimensionKindV1,
     DimensionV1,
+    LocalDetailUsageTermsV1,
     MeasureAxisV1,
     PointKindV1,
     PointRefV1,
     ReleaseBasisV1,
     SettingRefV1,
     detail_content_hash_of,
+    detail_schema_version_for,
+    detail_usage_terms_for,
 )
 from .drawing import (
     ASSEMBLY_DRAWING_GENERATOR_ID,
     ASSEMBLY_DRAWING_MANIFEST_SCHEMA_ID,
     ASSEMBLY_DRAWING_RESULT_SCHEMA_ID,
     ASSEMBLY_DRAWING_SCHEMA_VERSION,
+    ASSEMBLY_DRAWING_SCHEMA_VERSION_4_2,
+    ASSEMBLY_DRAWING_SCHEMA_VERSIONS,
     DRAWING_MANIFEST_PATH,
     DRAWING_DESCRIPTION,
     DRAWING_LOCALES,
@@ -51,6 +63,7 @@ from .drawing import (
     DRAWING_SVG_PATH,
     JSON_MEDIA_TYPE,
     LEGACY_DRAWING_ROLE_ALIASES,
+    LOCAL_DRAWING_DESCRIPTION,
     PDF_MEDIA_TYPE,
     SVG_MEDIA_TYPE,
     AssemblyDrawingManifestV1,
@@ -74,6 +87,7 @@ from .drawing import (
     PartsLegendV1,
     StepActionV1,
     drawing_manifest_for,
+    drawing_schema_version_for,
     verify_drawing_outputs,
 )
 from .verify import (
@@ -96,10 +110,14 @@ __all__ = [
     "ASSEMBLY_DETAIL_MEDIA_TYPE",
     "ASSEMBLY_DETAIL_SCHEMA_ID",
     "ASSEMBLY_DETAIL_SCHEMA_VERSION",
+    "ASSEMBLY_DETAIL_SCHEMA_VERSION_3_2",
+    "ASSEMBLY_DETAIL_SCHEMA_VERSIONS",
     "ASSEMBLY_DRAWING_GENERATOR_ID",
     "ASSEMBLY_DRAWING_MANIFEST_SCHEMA_ID",
     "ASSEMBLY_DRAWING_RESULT_SCHEMA_ID",
     "ASSEMBLY_DRAWING_SCHEMA_VERSION",
+    "ASSEMBLY_DRAWING_SCHEMA_VERSION_4_2",
+    "ASSEMBLY_DRAWING_SCHEMA_VERSIONS",
     "AXIS_INDEX",
     "DETAIL_PERMITTED_USES",
     "DETAIL_USAGE_STATEMENT",
@@ -112,6 +130,8 @@ __all__ = [
     "DRAWING_SVG_PATH",
     "JSON_MEDIA_TYPE",
     "LEGACY_DRAWING_ROLE_ALIASES",
+    "LOCAL_DETAIL_USAGE_STATEMENT",
+    "LOCAL_DRAWING_DESCRIPTION",
     "MAX_DETAIL_BYTES",
     "MAX_DIMENSIONS",
     "MEASURE_TOLERANCE_MM",
@@ -131,6 +151,7 @@ __all__ = [
     "DimensionBasisV1",
     "DimensionKindV1",
     "DimensionV1",
+    "LocalDetailUsageTermsV1",
     "DrawingBalloonV1",
     "DrawingBindingV1",
     "DrawingDimensionV1",
@@ -156,8 +177,11 @@ __all__ = [
     "VerifiedAssemblyDetailV1",
     "build_assembly_detail",
     "detail_content_hash_of",
+    "detail_schema_version_for",
+    "detail_usage_terms_for",
     "detail_file_bytes",
     "drawing_manifest_for",
+    "drawing_schema_version_for",
     "load_assembly_detail",
     "measure",
     "point_in_world",

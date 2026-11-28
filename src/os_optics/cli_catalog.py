@@ -36,6 +36,14 @@ The public optical catalog lives in a local store synchronized with the OpenSci 
   65 when the file is not a usable catalog release, 64 when it cannot be read;
 * ``catalog use CATALOG_VERSION``: make a release stored on this device the active one (no network; e.g. to select
   another release than the newest stored one a run took when none was active); exit 0, or 1 with the error document;
+* the public mechanical catalog (``opensci.public_mechanical_catalog``; mounts, posts, post holders and breadboards
+  for local assembly plans) lives in the same store: ``catalog status`` / ``check`` / ``verify`` add a ``mechanical``
+  block, ``catalog sync`` (without ``--release``) also fetches the service's current mechanical release when the
+  service offers one (``mechanical.outcome`` ``DOWNLOADED`` / ``ALREADY_STORED`` / ``NOT_OFFERED`` / ``UNAVAILABLE``
+  / ``FAILED``; a ``FAILED`` integrity or validation check exits 1, an ``UNAVAILABLE`` service never changes the
+  optical exit code), ``catalog import FILE`` stores a mechanical document as well as an optical release (detected by
+  its schema), and ``catalog mechanical list|show|status`` browse the mechanical documents in effect (``--mechanical
+  FILE``, else ``OS_OPTICS_MECHANICAL_CATALOG``, else the active stored release; no token, no network);
 * ``project update-catalog project.json [--out FILE] [--catalog FILE] [--include-changed]``: re-pin the Project's
   catalog components to the active release where their product is unchanged; exit 0 (``CURRENT`` / ``UPDATED`` /
   ``UPDATED_UNVERIFIED``: re-pinned, but some products changed or could not be compared, so run the Project again and
@@ -60,7 +68,8 @@ CATALOG_HELP = (
     "synchronized with the OpenSci catalog service (OPENSCI_CATALOG_URL, else OPENSCI_API_URL, else the OpenSci service): "
     "once on first use, then at most every OPENSCI_CATALOG_CHECK_INTERVAL seconds (default 3600, 0 = never automatically). "
     "'list' / 'show' browse the active release, 'materials' / 'material' its materials; 'status', 'check', 'sync', 'verify', "
-    "'import' and 'use' manage the store. "
+    "'import' and 'use' manage the store; 'mechanical list|show|status' browse the public mechanical catalog (mounts, posts, "
+    "post holders, breadboards) that 'catalog sync' or 'catalog import' stored, or a --mechanical FILE. "
     "When a command downloads a release by itself, one line on stderr says so."
 )
 UPDATE_DESCRIPTION = (
@@ -74,6 +83,26 @@ UPDATE_DESCRIPTION = (
     "NEEDS_ATTENTION (some components keep their old pin). Prints the report with summary and next_steps (the run and "
     "the submission that follow); --out writes the updated Project."
 )
+
+
+MECHANICAL_DESCRIPTION = (
+    "The public mechanical catalog: the OS-MECH identities (mounts, posts, post holders, breadboards) a local assembly plan "
+    "is derived from, with their engineering facts and the basis of each fact. The documents in effect are the --mechanical "
+    "FILE documents (repeatable: at most one OPENSCI document and up to 8 USER documents with your own hardware, "
+    "USER-MECH-*), else those OS_OPTICS_MECHANICAL_CATALOG names (paths separated by the system path separator), else the "
+    "active release 'catalog sync' or 'catalog import' stored. No token and no network are used. Exit codes: 0, 64 = an "
+    "unreadable file, 65 = no usable mechanical catalog (or an invalid document), 1 = 'show' of an unknown identity."
+)
+MECHANICAL_KINDS = ("POST", "POST_HOLDER", "MOUNT", "BREADBOARD")
+#: The engineering facts a one-line listing shows for each kind (``catalog mechanical list``).
+MECHANICAL_KEY_FACTS = {
+    "POST": ("diameter_mm", "length_mm", "top_thread"),
+    "POST_HOLDER": ("post_diameter_mm", "height_mm", "insertion_min_mm", "insertion_max_mm"),
+    "MOUNT": ("mount_kind", "centre_height_mm", "post_thread"),
+    "BREADBOARD": ("size_x_mm", "size_y_mm", "pitch_mm", "thread"),
+}
+#: How close a mount's held optic size must be to ``--holds-size`` (mm).
+HOLDS_SIZE_MATCH_MM = 0.05
 
 
 MATERIALS_DESCRIPTION = (
@@ -216,6 +245,22 @@ def register(catalog_commands: argparse._SubParsersAction) -> None:
     material.add_argument("--glass-catalogs", help="a catalogue order deciding a name several makers use, e.g. 'CDGM SCHOTT'")
     _add_ir_arguments(material)
     material.set_defaults(handler=_material)
+    mechanical = catalog_commands.add_parser("mechanical", help="browse the public mechanical catalog (mounts, posts, holders, "
+                                             "breadboards) for local assembly plans", description=MECHANICAL_DESCRIPTION)
+    mechanical_sub = mechanical.add_subparsers(dest="mechanical_command", required=True)
+    listing = mechanical_sub.add_parser("list", help="one entry per identity: sku, kind, name, key facts, profile",
+                                        description=MECHANICAL_DESCRIPTION)
+    listing.add_argument("--kind", choices=MECHANICAL_KINDS, help="only this kind")
+    listing.add_argument("--holds-size", type=float, metavar="MM", help="only mounts that hold an optic of this size (mm)")
+    listing.add_argument("--json", action="store_true", help="print the identity documents in full")
+    shown = mechanical_sub.add_parser("show", help="one identity document", description=MECHANICAL_DESCRIPTION)
+    shown.add_argument("sku", metavar="SKU", help="an OS-MECH-* (or USER-MECH-*) identity")
+    status_mechanical = mechanical_sub.add_parser("status", help="the mechanical documents in effect and the stored releases",
+                                                  description=MECHANICAL_DESCRIPTION)
+    for parser, handler in ((listing, _mechanical_list), (shown, _mechanical_show), (status_mechanical, _mechanical_status)):
+        parser.add_argument("--mechanical", action="append", default=[], metavar="FILE",
+                            help="a public mechanical catalog document to use (repeatable)")
+        parser.set_defaults(handler=handler)
 
 
 def register_project(project_commands: argparse._SubParsersAction) -> None:
@@ -242,12 +287,13 @@ def _failure(exc) -> int:
 
 def _status(args: argparse.Namespace) -> int:
     from .catalog import CatalogError, status
+    from .catalog.service import mechanical_status
 
     try:
         report = status()
     except CatalogError as exc:
         return _failure(exc)
-    document = report.as_dict()
+    document = {**report.as_dict(), "mechanical": mechanical_status()}
     _out(document)
     # (an active release in an earlier schema is not usable; releases stored with none active are: the next use takes the newest)
     return 0 if document["available"] else NOT_READY
@@ -256,32 +302,46 @@ def _status(args: argparse.Namespace) -> int:
 def _check(args: argparse.Namespace) -> int:
     from .catalog import CatalogError, check
 
+    from .catalog.service import check_mechanical
+
     try:
         report = check()
     except CatalogError as exc:
         return _failure(exc)
-    _out(report.as_dict())
+    _out({**report.as_dict(), "mechanical": check_mechanical()})
     return 0 if report.reachable else NOT_READY
 
 
 def _sync(args: argparse.Namespace) -> int:
     from .catalog import CatalogError, sync
 
+    from .catalog.service import MECHANICAL_FAILED, sync_mechanical
+
     try:
         report = sync(args.release)
     except CatalogError as exc:
         return _failure(exc)
-    _out(report.as_dict())
-    return 0 if report.state.usable_active else NOT_READY  # never a success that leaves no usable catalog
+    document = report.as_dict()
+    if args.release is None:  # (a retained optical release fetched for a pinned Project leaves the mechanical catalog alone)
+        document["mechanical"] = sync_mechanical()
+    _out(document)
+    if not report.state.usable_active:
+        return NOT_READY  # never a success that leaves no usable catalog
+    # a mechanical download that failed its integrity or validation check is not a success; an unavailable service is
+    return NOT_READY if document.get("mechanical", {}).get("outcome") == MECHANICAL_FAILED else 0
 
 
 def _verify(args: argparse.Namespace) -> int:
     from .catalog import CatalogError, verify
 
+    from .catalog.service import verify_mechanical
+
     try:
         report = verify(deep=args.deep)
     except CatalogError as exc:
         return _failure(exc)
+    mechanical = verify_mechanical()
+    report = {**report, "ok": report["ok"] and mechanical["ok"], "mechanical": mechanical}
     _out(report)
     return 0 if report["ok"] else VERIFY_FAILED
 
@@ -289,11 +349,15 @@ def _verify(args: argparse.Namespace) -> int:
 def _import(args: argparse.Namespace) -> int:
     from .catalog import CatalogError, import_release
 
+    from .catalog.service import import_mechanical, is_mechanical_document
+
     try:
         data = Path(args.file).read_bytes()
     except OSError as exc:
         print(f"error: cannot read the catalog file: {exc}", file=sys.stderr)
         return USAGE_ERROR
+    if is_mechanical_document(data):
+        return _import_mechanical(data, activate=not args.no_activate, importer=import_mechanical)
     try:
         report = import_release(data, activate=not args.no_activate)
     except CatalogError as exc:
@@ -301,6 +365,106 @@ def _import(args: argparse.Namespace) -> int:
         return LOCAL_INPUT_ERROR
     _out(report.as_dict())
     return 0
+
+
+def _import_mechanical(data: bytes, *, activate: bool, importer) -> int:
+    from .assembly_plan.mechanical import MechanicalCatalogError
+    from .catalog import CatalogError
+
+    try:
+        imported = importer(data, activate=activate)
+    except (CatalogError, MechanicalCatalogError) as exc:
+        error = exc.as_dict()
+        if isinstance(exc, MechanicalCatalogError):
+            error["hint"] = ("'catalog import' stores OPENSCI mechanical releases; a USER document (your own hardware, "
+                             "USER-MECH-*) is used with --mechanical FILE or OS_OPTICS_MECHANICAL_CATALOG")
+        _out({"status": "ERROR", "error": error})
+        return LOCAL_INPUT_ERROR
+    _out({"status": "IMPORTED", "mechanical": imported})
+    return 0
+
+
+def _mechanical_sources(args: argparse.Namespace):
+    """The mechanical documents in effect (``--mechanical``, else the environment, else the store), or an exit code."""
+
+    from .assembly_plan.mechanical import MechanicalCatalogError
+    from .assembly_plan.mechanical.model import MechanicalErrorCode
+    from .catalog.mechanical import resolve_sources
+
+    try:
+        return resolve_sources(args.mechanical).require()
+    except MechanicalCatalogError as exc:
+        _out({"status": "ERROR", "error": exc.as_dict()})
+        return USAGE_ERROR if exc.code is MechanicalErrorCode.MECHANICAL_FILE_UNREADABLE else LOCAL_INPUT_ERROR
+
+
+def _documents_in_effect(sources) -> list[dict]:
+    return [{"publisher": d.publisher, "mechanical_version": d.document.mechanical_version, "sha256": d.sha256,
+             "source": d.source.value, "location": None if d.location is None else str(d.location),
+             "identities": len(d.document.identities)} for d in sources.documents]
+
+
+def _key_facts(identity) -> dict:
+    payload = identity.payload()
+    facts = {name: payload.get(name) for name in MECHANICAL_KEY_FACTS.get(payload["kind"], ())}
+    if payload["kind"] == "MOUNT":
+        facts["holds"] = f"{payload['holds']['shape']} {payload['holds']['size_mm']:g} mm"
+        facts["mechanisms"] = [m["kind"] for m in payload.get("mechanisms", ())]
+    return facts
+
+
+def _mechanical_list(args: argparse.Namespace) -> int:
+    sources = _mechanical_sources(args)
+    if isinstance(sources, int):
+        return sources
+    rows = []
+    for identity in sources.identities():
+        payload = identity.payload()
+        if args.kind and payload["kind"] != args.kind:
+            continue
+        if args.holds_size is not None and (payload["kind"] != "MOUNT"
+                                            or abs(payload["holds"]["size_mm"] - args.holds_size) > HOLDS_SIZE_MATCH_MM):
+            continue
+        rows.append(payload if args.json else {
+            "opensci_sku": payload["opensci_sku"], "kind": payload["kind"], "display_name": payload["display_name"],
+            "publisher": sources.publisher_of(payload["opensci_sku"]), "facts": _key_facts(identity),
+            "profile": payload["profile"]["kind"]})
+    _out({"documents": _documents_in_effect(sources), "filters": {"kind": args.kind, "holds_size_mm": args.holds_size},
+          "total": len(rows), "identities": rows})
+    return 0
+
+
+def _mechanical_show(args: argparse.Namespace) -> int:
+    sources = _mechanical_sources(args)
+    if isinstance(sources, int):
+        return sources
+    identity = sources.identity(args.sku)
+    if identity is None:
+        _out({"status": "NOT_FOUND", "opensci_sku": args.sku, "documents": _documents_in_effect(sources),
+              "next_step": "'os-optics catalog mechanical list' lists the identities in effect"})
+        return NOT_READY
+    _out({"publisher": sources.publisher_of(args.sku), "identity": identity.payload()})
+    return 0
+
+
+def _mechanical_status(args: argparse.Namespace) -> int:
+    from .assembly_plan.mechanical import MechanicalCatalogError
+    from .assembly_plan.mechanical.model import MechanicalErrorCode
+    from .catalog.mechanical import environment_files, resolve_sources
+    from .catalog.service import mechanical_status
+
+    document = {"store": mechanical_status(), "environment_files": list(environment_files())}
+    try:
+        sources = resolve_sources(args.mechanical)
+    except MechanicalCatalogError as exc:
+        _out({**document, "status": "ERROR", "error": exc.as_dict()})
+        return USAGE_ERROR if exc.code is MechanicalErrorCode.MECHANICAL_FILE_UNREADABLE else LOCAL_INPUT_ERROR
+    document.update(status="AVAILABLE" if not sources.empty else "NOT_AVAILABLE", documents=_documents_in_effect(sources),
+                    users=[d.document.mechanical_version for d in sources.users])
+    if sources.empty:
+        document["next_steps"] = ["os-optics catalog sync", "os-optics catalog import FILE", "--mechanical FILE"]
+    _out(document)
+    return 0 if not sources.empty else NOT_READY
 
 
 def _use(args: argparse.Namespace) -> int:

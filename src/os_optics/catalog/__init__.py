@@ -32,7 +32,14 @@ Python::
     catalog.use_release("2026-09-30.3")   # make a stored release the active one (no network)
     catalog.import_release("public_optical_catalog.json")   # an offline device: add a release from a file
 
-Shell: ``os-optics catalog status|check|sync [--release V]|verify|import FILE|use V``. Failures raise
+    catalog.mechanical_status()     # local: the stored public mechanical catalog releases (no network)
+    catalog.check_mechanical()      # ask the service: CHECKED, NOT_OFFERED, UNAVAILABLE or FAILED
+    catalog.sync_mechanical()       # download the current mechanical release when the service offers it
+    catalog.verify_mechanical()     # re-check every stored mechanical release (no network)
+    catalog.import_mechanical("public_mechanical_catalog.json")   # add a mechanical release from a file
+
+Shell: ``os-optics catalog status|check|sync [--release V]|verify|import FILE|use V`` and ``os-optics catalog
+mechanical list|show|status``. Failures raise
 ``CatalogError`` with a stable ``CatalogErrorCode`` (``CATALOG_NOT_AVAILABLE``, ``ENGINE_UPGRADE_REQUIRED``,
 ``CATALOG_INTEGRITY_FAILED``, ...). The browser runtime never uses the network: its host installs the catalog with
 ``os_optics.local.json_api.install_catalog``.
@@ -47,13 +54,18 @@ from .service import (
     automatic_access,
     check,
     check_interval,
+    check_mechanical,
+    import_mechanical,
     import_release,
+    mechanical_status,
     network_available,
     release_bytes,
     status,
     sync,
+    sync_mechanical,
     use_release,
     verify,
+    verify_mechanical,
 )
 from .store import (
     ENV_CATALOG_DIR,
@@ -81,14 +93,19 @@ __all__ = [
     "catalog_version_key",
     "check",
     "check_interval",
+    "check_mechanical",
+    "import_mechanical",
     "import_release",
     "manifest_url",
+    "mechanical_status",
     "network_available",
     "release_bytes",
     "status",
     "store_directory",
     "sync",
+    "sync_mechanical",
     "use_release",
     "validate_release",
     "verify",
+    "verify_mechanical",
 ]

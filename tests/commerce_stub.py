@@ -11,6 +11,16 @@ mechanical product listing (``GET /api/v1/mechanical-products``), part-list subm
 /api/v1/part-list-submissions``: unknown part numbers refused with ``PART_NOT_ORDERABLE``, derived mechanics without a
 beam height with ``MOUNTING_INPUT_REQUIRED``) and the mounting sheets of a resolution / an Order. Every request is
 recorded.
+
+BOM-only ordering (DESIGN_P section 1, the facts the Engine relies on): a version-2 purchase BOM gets a line review
+(``resolution.bom_review``; ``NOT_ORDERABLE`` for an unknown part number, ``ABOVE_LIMIT`` above ``max_line_quantity``,
+``TEMPORARILY_UNAVAILABLE`` for ``bom_unavailable``); every line OK -> 201 ``ORDERABLE``; some OK -> 201
+``CHANGES_REQUIRED`` (persisted, its own ``resolution_id``; ``POST /orders`` refuses it with 409
+``BOM_CHANGES_UNCONFIRMED``); none OK -> 422 ``BOM_NOT_ORDERABLE`` with the review in ``details``; a confirmed
+resubmission is checked against the review it names (422 ``BOM_CONFIRMATION_INVALID`` / 404 ``RESOLUTION_NOT_FOUND``);
+a replay answers 201 ``replayed: true``. With ``retired`` the stub is the BOM-only service: the retired routes answer 410
+``ROUTE_RETIRED`` / ``ORDERING_BASIS_RETIRED`` before authentication, a version-1 part list with derived mechanics or
+mounting 422 ``ORDER_OPTION_RETIRED``, and ``POST /orders`` of the design resolution 410 ``ORDERING_BASIS_RETIRED``.
 """
 
 from __future__ import annotations
@@ -53,7 +63,25 @@ RECOVERY_BY_CODE = {
     "FEEDBACK_INVALID": "FIX_REQUEST", "FEEDBACK_RATE_LIMITED": "RETRY_LATER",
     "PART_NOT_ORDERABLE": "LIST_MECHANICAL_PRODUCTS", "MOUNTING_INPUT_REQUIRED": "FIX_REQUEST",
     "MOUNTING_SHEET_NOT_PART_OF_PURCHASE": "FIX_REQUEST", "ORDER_OPTION_ON_HOLD": "FIX_REQUEST",
+    "ORDERING_BASIS_RETIRED": "PURCHASE_BOM", "ROUTE_RETIRED": "USE_LOCAL_PLAN", "ORDER_OPTION_RETIRED": "PURCHASE_BOM",
+    "BOM_CHANGES_UNCONFIRMED": "CONFIRM_BOM_CHANGES", "BOM_NOT_ORDERABLE": "CHOOSE_ANOTHER_PRODUCT",
+    "BOM_CONFIRMATION_INVALID": "FIX_REQUEST", "SUBMISSION_SCHEMA_INVALID": "FIX_REQUEST",
 }
+#: The routes the BOM-only service retired: (method, path pattern with ``*`` segments) -> code (answered with 410).
+RETIRED_ROUTES = (
+    ("POST", ("commercial-submissions",), "ORDERING_BASIS_RETIRED"),
+    ("GET", ("resolutions", "*", "mounting-sheet"), "ROUTE_RETIRED"),
+    ("GET", ("orders", "*", "mounting-sheet"), "ROUTE_RETIRED"),
+    ("GET", ("resolutions", "*", "optical-layout"), "ROUTE_RETIRED"),
+    ("GET", ("orders", "*", "optical-layout"), "ROUTE_RETIRED"),
+    ("POST", ("resolutions", "*", "assembly-preview-deliveries"), "ROUTE_RETIRED"),
+    ("POST", ("resolutions", "*", "assembly-detail-deliveries"), "ROUTE_RETIRED"),
+    ("POST", ("artifact-sets",), "ROUTE_RETIRED"),
+    ("GET", ("artifact-sets", "*"), "ROUTE_RETIRED"),
+    ("GET", ("resolutions", "*", "artifact-sets"), "ROUTE_RETIRED"),
+    ("GET", ("artifact-sets", "*", "files", "*"), "ROUTE_RETIRED"),
+)
+BOM_LINE_FIELDS = {"line_id", "opensci_sku", "quantity", "purpose"}
 #: The stub's mechanical products (``GET /api/v1/mechanical-products``) and the part numbers a part list may name.
 MECHANICAL_PRODUCTS = [
     {"opensci_sku": "OS-MECH-BB-300", "kind": "BREADBOARD", "display_name": "Breadboard 300 x 300 mm",
@@ -78,7 +106,7 @@ DEFAULT_ADDRESS = {"address_id": "00000000-0000-4000-8000-0000000add01", "label"
                    "mobile_phone": "13800138000", "region": "CN_MAINLAND", "province": "广东省", "city": "深圳市",
                    "district": "南山区", "street_address": "科技园路 1 号", "postal_code": "518000", "is_default": True}
 ADDRESS_FIELDS = ("recipient_name", "mobile_phone", "province", "city", "district", "street_address", "postal_code")
-FAMILY_BY_STATUS = {401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 422: "REJECTED",
+FAMILY_BY_STATUS = {401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND", 409: "CONFLICT", 410: "GONE", 422: "REJECTED",
                     429: "RATE_LIMITED", 503: "SERVER_ERROR"}
 #: The feedback contract (integration spec item 4): categories, text limits, context fields and their limits.
 FEEDBACK_CATEGORIES = ("PROBLEM", "FEATURE_REQUEST", "DOCUMENTATION")
@@ -155,6 +183,11 @@ class StubState:
     #: a missing key answers 409 MOUNTING_SHEET_NOT_PART_OF_PURCHASE.
     mounting_sheets: dict[str, Any] = field(default_factory=dict)
     part_list_submissions: int = 0
+    #: BOM-only ordering (module docstring)
+    max_line_quantity: int = 100
+    bom_unavailable: set[str] = field(default_factory=set)
+    bom_reviews: dict[str, dict[str, Any]] = field(default_factory=dict)  # resolution_id -> its bom_review
+    retired: bool = False
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def add_token(self, name: str, scopes: list[str], **kw: Any) -> str:
@@ -380,6 +413,122 @@ def _check_feedback(request: Any) -> None:
         raise _feedback_invalid("CONTAINS_CREDENTIAL", holding)
 
 
+def _retired_code(method: str, p: list[str]) -> str | None:
+    for route_method, pattern, code in RETIRED_ROUTES:
+        if route_method == method and len(pattern) == len(p) and all(a in ("*", b) for a, b in zip(pattern, p)):
+            return code
+    return None
+
+
+def _bom_resolution_id(number: int) -> str:
+    return f"00000000-0000-4000-8000-{0xb0b000 + number:012x}"
+
+
+def _review_lines(state: StubState, lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    known = {m["opensci_sku"] for m in MECHANICAL_PRODUCTS} | set(ORDERABLE_OPTICS)
+    reviewed = []
+    for line in lines:
+        sku = line["opensci_sku"]
+        status = ("NOT_ORDERABLE" if sku not in known else "ABOVE_LIMIT" if line["quantity"] > state.max_line_quantity
+                  else "TEMPORARILY_UNAVAILABLE" if sku in state.bom_unavailable else "OK")
+        reviewed.append({"line_id": line["line_id"], "opensci_sku": sku, "quantity": line["quantity"],
+                         "purpose": line.get("purpose", "PLAN"), "status": status, "line_key": None,
+                         "limit": state.max_line_quantity if status == "ABOVE_LIMIT" else None, "proposed": None})
+    ok = 0
+    for line in reviewed:
+        if line["status"] == "OK":
+            ok += 1
+            line["line_key"] = f"B{ok:02d}"
+    return reviewed
+
+
+def _confirmation_problems(review: dict[str, Any], request: dict[str, Any]) -> list[dict[str, Any]]:
+    """DESIGN_P 1.5 ``verify_confirmation``: the decisions must turn the reviewed lines into the submitted lines."""
+
+    lines = {l["line_id"]: l for l in review["lines"]}
+    decisions = {d["line_id"]: d for d in request["confirmed_changes"]["decisions"]}
+    problems = []
+    for line_id, d in decisions.items():
+        line = lines.get(line_id)
+        if line is None:
+            problems.append({"line_id": line_id, "reason": "UNKNOWN_LINE"})
+        elif line["status"] == "OK":
+            problems.append({"line_id": line_id, "reason": "NOT_FLAGGED"})
+        elif d["decision"] == "QUANTITY_CHANGED" and line["status"] in ("NOT_ORDERABLE", "TEMPORARILY_UNAVAILABLE"):
+            problems.append({"line_id": line_id, "reason": "DOES_NOT_RESOLVE"})
+    problems += [{"line_id": l["line_id"], "reason": "MISSING_DECISION"} for l in review["lines"]
+                 if l["status"] != "OK" and l["line_id"] not in decisions]
+    expected = []
+    for l in review["lines"]:
+        d = decisions.get(l["line_id"])
+        if l["status"] == "OK" or d is None:
+            expected.append((l["line_id"], l["opensci_sku"], l["quantity"], l["purpose"]))
+        elif d["decision"] == "QUANTITY_CHANGED":
+            expected.append((l["line_id"], l["opensci_sku"], d["quantity"], l["purpose"]))
+        elif d["decision"] == "SUBSTITUTED":
+            expected.append((l["line_id"], d["opensci_sku"], d["quantity"], l["purpose"]))
+    submitted = [(x["line_id"], x["opensci_sku"], x["quantity"], x.get("purpose", "PLAN")) for x in request["lines"]]
+    if not problems and submitted != expected:
+        problems.append({"reason": "LINES_DIFFER", "expected_line_ids": [e[0] for e in expected],
+                         "submitted_line_ids": [x[0] for x in submitted]})
+    return problems
+
+
+def _part_list_v2(state: StubState, headers: dict[str, str], body: bytes, document: dict[str, Any]) -> tuple[int, Any, None]:
+    if set(document) - {"schema", "schema_version", "lines", "confirmed_changes", "mechanical_supply"} \
+            or document.get("mechanical_supply", "NONE") != "NONE" or not isinstance(document.get("lines"), list) \
+            or any(set(line) - BOM_LINE_FIELDS for line in document["lines"]):
+        if document.get("mechanical_supply") == "DERIVED":
+            raise Refusal(422, "ORDER_OPTION_RETIRED", "OpenSci no longer selects mounting hardware",
+                          {"option": "mechanical_supply", "value": "DERIVED"})
+        raise Refusal(422, "SUBMISSION_SCHEMA_INVALID", "the part-list submission is invalid")
+    lines = [dict(line) for line in document["lines"]]
+    if all("line_id" not in line for line in lines):
+        if document.get("confirmed_changes"):
+            raise Refusal(422, "BOM_CONFIRMATION_INVALID", "the confirmed changes do not match",
+                          {"problems": [{"reason": "LINE_IDS_REQUIRED"}]})
+        for index, line in enumerate(lines):
+            line["line_id"] = f"L{index + 1}"
+    changes = document.get("confirmed_changes")
+    if changes:
+        reviewed = state.bom_reviews.get(changes.get("resolution_id"))
+        if reviewed is None:
+            raise Refusal(404, "RESOLUTION_NOT_FOUND", "no such resolution")
+        if reviewed["status"] != "CHANGES_REQUIRED":
+            raise Refusal(422, "BOM_CONFIRMATION_INVALID", "the confirmed changes do not match",
+                          {"problems": [{"reason": "REVIEW_NEEDS_NO_CHANGES"}]})
+        problems = _confirmation_problems(reviewed, {**document, "lines": lines})
+        if problems:
+            raise Refusal(422, "BOM_CONFIRMATION_INVALID", "the confirmed changes do not turn the reviewed lines into the "
+                          "submitted lines", {"problems": problems})
+    reviewed_lines = _review_lines(state, lines)
+    ok = [line for line in reviewed_lines if line["status"] == "OK"]
+    review = {"schema_version": "1", "status": "ORDERABLE" if len(ok) == len(reviewed_lines) else "CHANGES_REQUIRED",
+              "lines": reviewed_lines, "review_digest": hashlib.sha256(json.dumps(reviewed_lines, sort_keys=True).encode()).hexdigest(),
+              "confirmed_changes": None if not changes else {"reviewed_resolution_id": changes["resolution_id"],
+                                                             "decisions": changes["decisions"]}}
+    if not ok:
+        raise Refusal(422, "BOM_NOT_ORDERABLE", "No line of this BOM can be supplied now",
+                      {"bom_review": review, "line_ids": [line["line_id"] for line in reviewed_lines]})
+
+    def quote() -> dict[str, Any]:
+        state.part_list_submissions += 1
+        resolution_id = _bom_resolution_id(state.part_list_submissions)
+        state.bom_reviews[resolution_id] = review
+        return {"schema": "opensci.commercial_submission_response", "schema_version": "1.1",
+                "submission_id": f"00000000-0000-4000-8000-{0xc0c000 + state.part_list_submissions:012x}",
+                "resolution_id": resolution_id,
+                "resolution": {"schema_version": "7", "basis": "PART_LIST", "bom_review": review,
+                               "next_steps": ["CREATE_ORDER"] if review["status"] == "ORDERABLE" else ["CONFIRM_BOM_CHANGES"],
+                               "customer_bom": {"currency": "CNY", "total": f"{100 * sum(l['quantity'] for l in ok)}.00",
+                                                "lines": [{"line_key": l["line_key"], "opensci_sku": l["opensci_sku"],
+                                                           "quantity": l["quantity"], "purpose": l["purpose"],
+                                                           "unit_price": "100.00"} for l in ok]}}}
+
+    _, answer = _idempotent(state, headers, "part-list", body, quote)
+    return 201, answer, None  # (DESIGN_P I3: a replay is 201 with replayed: true too)
+
+
 def route(state: StubState, method: str, path: str, query: dict[str, list[str]], headers: dict[str, str],
           body: bytes) -> tuple[int, Any, dict[str, str] | None]:
     prefix = "/api/v1"
@@ -387,6 +536,11 @@ def route(state: StubState, method: str, path: str, query: dict[str, list[str]],
         raise Refusal(404, "ROUTE_NOT_FOUND", "no such route")
     p = path[len(prefix):].split("/")[1:]
     rid = state.resolution_id
+    retired = _retired_code(method, p) if state.retired else None
+    if retired is not None:  # answered before authentication, as the BOM-only service does
+        raise Refusal(410, retired, "This route is retired: assembly previews, drawings, optical layouts and mounting "
+                      "sheets are made on your machine with os-optics." if retired == "ROUTE_RETIRED" else
+                      "Ordering from a design submission is retired: submit the parts list (BOM).")
 
     if p == ["account", "token"]:
         token = _authorize(state, headers, None)
@@ -499,6 +653,11 @@ def route(state: StubState, method: str, path: str, query: dict[str, list[str]],
     if p == ["part-list-submissions"] and method == "POST":
         _authorize(state, headers, "commercial:resolve")
         document = _json(body)
+        if isinstance(document, dict) and document.get("schema_version") == "2":
+            return _part_list_v2(state, headers, body, document)
+        if state.retired and isinstance(document, dict) and (document.get("mechanical_supply") == "DERIVED" or document.get("mounting")):
+            raise Refusal(422, "ORDER_OPTION_RETIRED", "OpenSci no longer selects mounting hardware or assembles part lists",
+                          {"option": "mechanical_supply", "value": document.get("mechanical_supply")})
         if not isinstance(document, dict) or document.get("schema") != "opensci.commercial.part_list_submission"                 or set(document) - {"schema", "schema_version", "lines", "mechanical_supply", "mounting", "optics_source",
                                     "platform", "assembly"}:
             raise Refusal(422, "SUBMISSION_SCHEMA_INVALID", "the part-list submission is invalid")
@@ -579,6 +738,20 @@ def route(state: StubState, method: str, path: str, query: dict[str, list[str]],
         if method == "POST":
             _authorize(state, headers, "commercial:order:place")
             request = _json(body) or {}
+            review = state.bom_reviews.get(request.get("resolution_id"))
+            if review is not None and review["status"] == "CHANGES_REQUIRED":
+                raise Refusal(409, "BOM_CHANGES_UNCONFIRMED", "This quote has lines that cannot be supplied as listed",
+                              {"resolution_id": request["resolution_id"],
+                               "line_ids": [l["line_id"] for l in review["lines"] if l["status"] != "OK"]})
+            if review is not None:
+                bom_rid = request["resolution_id"]
+                status, document = _idempotent(state, headers, "order", body, lambda: {"order": _order_for(
+                    state, bom_rid, next(a for a in state.addresses if a["is_default"]))},
+                    digest=hashlib.sha256(bom_rid.encode("utf-8")).hexdigest())
+                return status, {"schema": "opensci.commercial.order_placement", "schema_version": "1",
+                                "replayed": document["replayed"], "order": state.orders[document["order"]["order_id"]]}, None
+            if state.retired and request.get("resolution_id") == rid:
+                raise Refusal(410, "ORDERING_BASIS_RETIRED", "Design resolutions can no longer be ordered")
             if request.get("resolution_id") != rid:
                 raise Refusal(404, "RESOLUTION_NOT_FOUND", "no such resolution")
 

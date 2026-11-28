@@ -42,7 +42,9 @@ from .._vendor.shared_contracts.common.decimal_string import DECIMAL_STRING_PATT
 from .._vendor.shared_contracts.design_catalog import PublicCoatingV1, PublicMaterialV1, PublicOpticalCatalogV2, PublicOpticalProductV2
 from .._vendor.shared_contracts.design_catalog.optical_catalog import DECIMAL_CONTEXT
 from .._vendor.shared_contracts.optical_design import ProjectDocumentV2
+from ..assembly_plan.mechanical.model import MechanicalPlanBinding, MechanicalSources
 from ..catalog.errors import CatalogError, CatalogErrorCode
+from ..catalog.mechanical import resolve_sources
 from ..catalog.service import check_interval, mark_release_validated, network_available, release_bytes
 from ..catalog.store import SUPPORTED_SCHEMA_VERSIONS, check_compatible, release_header, validated_here
 from ..project_document import parse_project_document, plain_location
@@ -648,3 +650,13 @@ def _surface_location(item: Any, loc: tuple[Any, ...]) -> str:
         elif not (isinstance(part, str) and part.isupper()):  # a discriminator tag (SURFACE_SEQUENCE) names no key
             return ""
     return ""
+
+
+def mechanical_sources(cli_files: Any = (), plan_binding: MechanicalPlanBinding | None = None,
+                       environ: Mapping[str, str] | None = None) -> MechanicalSources:
+    """The public mechanical catalog documents a local assembly command uses: ``--mechanical`` files, else
+    ``OS_OPTICS_MECHANICAL_CATALOG``, then what ``plan_binding`` binds, else the store's active OpenSci release
+    (``os_optics.catalog.mechanical.resolve_sources``; no token, no network). ``environ`` defaults to the process
+    environment. Failures raise ``MechanicalCatalogError`` with a ``MECHANICAL_*`` code."""
+
+    return resolve_sources(tuple(cli_files), environ, plan_binding)

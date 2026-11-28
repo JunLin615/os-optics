@@ -420,7 +420,7 @@ from .submission import (
 )
 
 JSON_API = "opensci.local_json_api"
-JSON_API_VERSION = "1.8"
+JSON_API_VERSION = "1.9"
 #: Every method of this API (``os_optics.local.api_registry``): the functions below register themselves with
 #: ``@api_method``, the composition functions are added after them. A host calls them through ``call_method``.
 API_METHODS = ApiRegistry()
@@ -433,7 +433,7 @@ LOCAL_RUN_ERROR = "LOCAL_RUN_ERROR"
 ASSEMBLY_PACKAGE_INVALID = "ASSEMBLY_PACKAGE_INVALID"
 ASSEMBLY_SCHEMA_KIND = "assembly-validation"
 DRAWING_SCHEMA_KINDS = ("assembly-detail", "assembly-drawing-result", "assembly-drawing-manifest")
-DRAWING_OPTIONS = frozenset({"diagnostic", "expected_preview_content_hash", "expected_detail_content_hash", "locale"})
+DRAWING_OPTIONS = frozenset({"diagnostic", "expected_preview_content_hash", "expected_detail_content_hash", "locale", "design_bom"})
 #: The languages a drawing (Detailed Assembly Drawing, Optical Layout Drawing) can be written in.
 DRAWING_LOCALES = ("en", "zh-CN")
 #: Project features beyond catalog products that this runtime simulates (``capabilities()["project_features"]``).
@@ -639,7 +639,7 @@ def capabilities() -> dict[str, Any]:
         "target_metrics": target_metrics(),
         "coherence_metrics": sorted(COHERENCE_METRICS),
         "pupil_ray_selections": [selection.value for selection in PupilRaySelectionV1],
-        "schema_kinds": sorted([*SCHEMA_MODELS, ASSEMBLY_SCHEMA_KIND, *DRAWING_SCHEMA_KINDS, NETWORK_SCHEMA_KIND]),
+        "schema_kinds": sorted([*SCHEMA_MODELS, ASSEMBLY_SCHEMA_KIND, *DRAWING_SCHEMA_KINDS, NETWORK_SCHEMA_KIND, *_plan_schema_kinds()]),
         "drawing_locales": list(DRAWING_LOCALES),
         "prescription_formats": list(PRESCRIPTION_FORMATS),
         "native_component_classes": native_class_ids(),
@@ -1805,6 +1805,16 @@ def update_project_catalog(document: Any, include_changed: bool = False) -> dict
     return {"ok": True, **update.as_dict(), "project": update.project.payload()}
 
 
+#: Problems a refused plan call lists at most.
+MAX_PLAN_PROBLEMS = 20
+
+
+def _plan_schema_kinds() -> tuple[str, ...]:
+    from ..assembly_plan.schemas import PLAN_SCHEMA_KINDS  # lazy: the plan contracts load on first use
+
+    return PLAN_SCHEMA_KINDS
+
+
 @api_method("runtime")
 def json_schema(kind: str) -> dict[str, Any]:
     """The JSON Schema of a contract: ``project``, ``local-validation``, ``catalog``, ``optical-scene``,
@@ -1812,6 +1822,10 @@ def json_schema(kind: str) -> dict[str, Any]:
 
     if kind == NETWORK_SCHEMA_KIND:
         return {"ok": True, "kind": kind, "schema": LinearOpticalNetworkV1.model_json_schema(by_alias=True)}
+    if kind in _plan_schema_kinds():
+        from ..assembly_plan.schemas import plan_schema
+
+        return {"ok": True, "kind": kind, "schema": plan_schema(kind)}
     if kind == ASSEMBLY_SCHEMA_KIND:
         from ..assembly import AssemblyLocalValidationV1  # lazy: os_optics.assembly imports this package
 
@@ -1824,7 +1838,7 @@ def json_schema(kind: str) -> dict[str, Any]:
         return {"ok": True, "kind": kind, "schema": drawing_model.model_json_schema(by_alias=True)}
     model = SCHEMA_MODELS.get(kind)
     if model is None:
-        known = sorted([*SCHEMA_MODELS, ASSEMBLY_SCHEMA_KIND, *DRAWING_SCHEMA_KINDS, NETWORK_SCHEMA_KIND])
+        known = sorted([*SCHEMA_MODELS, ASSEMBLY_SCHEMA_KIND, *DRAWING_SCHEMA_KINDS, NETWORK_SCHEMA_KIND, *_plan_schema_kinds()])
         return _error([LocalRunProblem(LocalRunErrorCode.PROJECT_INVALID, f"unknown schema kind {kind!r}; known: {known}")])
     return {"ok": True, "kind": kind, "schema": model.model_json_schema(by_alias=True)}
 
@@ -1941,8 +1955,9 @@ def generate_assembly_drawing(package: Any, detail: Any, options: Any = None) ->
 
     ``package``: the Assembly Preview Package archive bytes or ``{path: bytes}`` map; ``detail``: the Assembly Detail
     Package bytes (the bytes of an opened delivery); ``options``: ``{"diagnostic": bool, "expected_preview_content_hash":
-    str, "expected_detail_content_hash": str, "locale": "en" | "zh-CN"}`` (all optional; ``locale`` is the language of the
-    sheet, default ``en``: pass the host's UI language). A check that FAILED or was not completed is refused
+    str, "expected_detail_content_hash": str, "locale": "en" | "zh-CN", "design_bom": {...}}`` (all optional; ``locale`` is
+    the language of the sheet, default ``en``: pass the host's UI language; ``design_bom``: the design BOM a local plan's
+    package binds, its parts legend -- required for such a package). A check that FAILED or was not completed is refused
     (``DRAWING_REFUSED_VALIDATION_FAILED`` / ``DRAWING_REFUSED_VALIDATION_INCONCLUSIVE``) unless ``diagnostic`` is true.
     Returns ``drawing_status`` (``DETAILED_ASSEMBLY_DRAWING``, or with ``diagnostic`` ``DIAGNOSTIC_VALIDATION_FAILED`` /
     ``DIAGNOSTIC_VALIDATION_INCOMPLETE``), ``delivery_ready``, ``validation_status``, ``result`` (``AssemblyDrawingResultV1``), ``manifest``
@@ -1964,7 +1979,7 @@ def generate_assembly_drawing(package: Any, detail: Any, options: Any = None) ->
         drawing = generate(package, detail, diagnostic=options.get("diagnostic", False),
                            expected_preview_content_hash=options.get("expected_preview_content_hash"),
                            expected_detail_content_hash=options.get("expected_detail_content_hash"),
-                           locale=options.get("locale", "en"))
+                           locale=options.get("locale", "en"), design_bom=options.get("design_bom"))
     except AssemblyDrawingError as exc:
         return {"ok": False, "error": exc.as_dict()}
     except RecursionError:  # pragma: no cover - the generator converts every nesting failure to an AssemblyDrawingError
@@ -1995,6 +2010,221 @@ def verify_assembly_drawing(files: Any) -> dict[str, Any]:
     except RecursionError:  # pragma: no cover - verify_assembly_drawing never raises on malformed outputs
         problems = [NESTED_TOO_DEEPLY]
     return {"ok": True, "valid": not problems, "problems": problems}
+
+
+# ---------------------------------------------------------------------------------------------- local assembly plans
+
+
+def _assembly_plan_error(exc: Exception) -> dict[str, Any]:
+    """The reply of a refused plan call (``AssemblyPlanError`` / ``MechanicalCatalogError`` / a malformed document)."""
+
+    if isinstance(exc, ValidationError):
+        problems = [{"code": "INPUT_INVALID", "message": f"{'.'.join(str(p) for p in e.get('loc', ()))}: {e.get('msg', '')}"}
+                    for e in exc.errors()[:MAX_PLAN_PROBLEMS]]
+        return {"ok": False, "error": {"code": "INPUT_INVALID", "message": "the document is not valid", "problems": problems}}
+    return {"ok": False, "error": exc.as_dict()}  # type: ignore[attr-defined]
+
+
+def _plan_sources(mechanical: Any) -> Any:
+    """The ``MechanicalSources`` of a host's documents (each a JSON object, JSON text or bytes)."""
+
+    from .._vendor.shared_contracts.common.hashes import canonicalize_osc1_bytes
+    from ..assembly_plan.mechanical import MechanicalSources
+
+    documents = mechanical if isinstance(mechanical, (list, tuple)) else [mechanical]
+    data = []
+    for doc in documents:
+        doc = _binary(doc)
+        if isinstance(doc, dict):
+            data.append(canonicalize_osc1_bytes(doc))
+        elif isinstance(doc, str):
+            data.append(doc.encode("utf-8"))
+        else:
+            data.append(bytes(doc))
+    return MechanicalSources.of(*data).require()
+
+
+def _plan_inputs(plan: Any, project: Any, mechanical: Any, catalog: Any = None) -> tuple[Any, Any, Any]:
+    """``(revision, project, context)`` of a host's plan revision, its Project and the mechanical documents."""
+
+    from ..assembly_plan.context import plan_context
+    from ..assembly_plan.contract import AssemblyPlanRevisionV1
+
+    raw = _binary(plan)
+    revision = AssemblyPlanRevisionV1.model_validate(json.loads(raw) if isinstance(raw, (bytes, bytearray, str)) else raw)
+    document = load_project(project)
+    optical = load_public_catalog(catalog, catalog_version=revision.bindings.optical_catalog.catalog_version)
+    return revision, document, plan_context(document, optical, _plan_sources(mechanical), revision=revision)
+
+
+def _plan_record(run: Any) -> Any:
+    from ..assembly_plan.workflow import RUN_RECORD_FILE, read_run_record
+
+    if run is None:
+        return None
+    if isinstance(run, dict) and RUN_RECORD_FILE in run:
+        return read_run_record(json.loads(_binary(run[RUN_RECORD_FILE])))
+    return read_run_record(run)
+
+
+def _plan_reply(revision: Any, check: Any) -> dict[str, Any]:
+    return {"findings": [f.model_dump(mode="json", exclude_none=True) for f in revision.findings],
+            "status": revision.status.model_dump(mode="json", exclude_none=True),
+            "layout_validation": None if check is None or check.validation is None else check.validation.payload()}
+
+
+@api_method("assembly")
+def derive_assembly_plan(project: Any, mechanical: Any, options: Any = None, run: Any = None, *, catalog: Any = None) -> dict[str, Any]:
+    """Derive a local assembly plan of a Project in memory (``os_optics.assembly_plan.derive_plan``): ``mechanical`` is the
+    list of public mechanical catalog documents to use (one OPENSCI document, optional USER documents); ``options`` the
+    derive options (``max_board_size_mm``, ``beam_height_mm``, ``customer_table``, ``customer_owned``, ``time_limit_s``);
+    ``run`` a run's Local Validation record (or a run's ``{file name: bytes}`` with ``local_validation.json``) to bind.
+    Returns ``{"ok", "plan" (revision 1), "project", "findings", "status", "layout_validation"}``."""
+
+    from ..assembly_plan import AssemblyPlanError, MechanicalCatalogError
+    from ..assembly_plan.workflow import derive_plan
+
+    try:
+        result = derive_plan(project, mechanical=_plan_sources(mechanical), catalog=catalog, options=dict(options or {}),
+                             run=_plan_record(run))
+    except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except LocalRunError as exc:
+        return _error(exc.problems)
+    return {"ok": True, "plan": result.revision.payload(), "project": result.project.payload(),
+            **_plan_reply(result.revision, result.check)}
+
+
+@api_method("assembly")
+def check_assembly_plan(plan: Any, project: Any, mechanical: Any, options: Any = None, *, catalog: Any = None) -> dict[str, Any]:
+    """Check a plan revision with this Engine: ``options``: ``{"run": record}`` (optional, the run to judge the optics
+    freshness against). Returns ``{"ok", "findings", "status", "layout_validation"}``."""
+
+    from ..assembly_plan import AssemblyPlanError, MechanicalCatalogError
+    from ..assembly_plan.check import check_content
+
+    try:
+        revision, _, context = _plan_inputs(plan, project, mechanical, catalog)
+        check = check_content(revision, context, derive_findings=[f for f in revision.findings if f.source.value == "DERIVE"],
+                              run=_plan_record((options or {}).get("run")))
+    except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except LocalRunError as exc:
+        return _error(exc.problems)
+    return {"ok": True, **_plan_reply(check.revision(revision), check)}
+
+
+@api_method("assembly")
+def apply_assembly_plan_ops(plan: Any, project: Any, ops: Any, mechanical: Any, options: Any = None, *,
+                            catalog: Any = None) -> dict[str, Any]:
+    """Apply plan ops to a revision (``revert_to`` needs a plan directory): ``options``: ``{"require_check": bool}``.
+    Returns ``{"ok", "plan" (the next revision), "project", "project_changed", "op_results", "findings", "status",
+    "layout_validation"}``."""
+
+    from ..assembly_plan import AssemblyPlanError, MechanicalCatalogError
+    from ..assembly_plan.workflow import apply_plan_ops
+
+    try:
+        revision, document, context = _plan_inputs(plan, project, mechanical, catalog)
+        nxt, edited, results, check = apply_plan_ops(revision, document, list(ops or ()), context=context,
+                                                     require_check=bool((options or {}).get("require_check", False)))
+    except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except LocalRunError as exc:
+        return _error(exc.problems)
+    return {"ok": True, "plan": nxt.payload(), "project": edited.payload(),
+            "project_changed": edited.content_hash() != document.content_hash(),
+            "op_results": [r.model_dump(mode="json") for r in results], **_plan_reply(nxt, check)}
+
+
+@api_method("assembly")
+def assembly_plan_preview(plan: Any, project: Any, mechanical: Any, *, catalog: Any = None) -> dict[str, Any]:
+    """The LOCAL_PLAN Assembly Preview Package of a plan revision and its layout check: ``{"ok", "manifest", "validation",
+    "files": {path: bytes}}`` (refused for a plan holding the user's own hardware)."""
+
+    from ..assembly import validate_assembly_layout
+    from ..assembly_plan import AssemblyPlanError, MechanicalCatalogError
+    from ..assembly_plan.projection import project_plan_package
+
+    try:
+        revision, _, context = _plan_inputs(plan, project, mechanical, catalog)
+        package = project_plan_package(revision, context)
+    except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except LocalRunError as exc:
+        return _error(exc.problems)
+    validation = validate_assembly_layout(package)
+    return {"ok": True, "manifest": package.manifest.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "validation": validation.payload(), "files": dict(package.files)}
+
+
+@api_method("assembly")
+def assembly_plan_drawing(plan: Any, project: Any, mechanical: Any, options: Any = None, *, catalog: Any = None) -> dict[str, Any]:
+    """The assembly drawing of your design (drawing 4.2) of a plan revision: ``options``: ``{"locale": "en" | "zh-CN",
+    "diagnostic": bool}``. Returns ``{"ok", "status", "files"}`` (the four drawing files, ``preview.zip`` and
+    ``assembly-detail.json``)."""
+
+    from ..assembly_drawing import AssemblyDrawingError
+    from ..assembly_plan import AssemblyPlanError, MechanicalCatalogError
+    from ..assembly_plan.check import check_content
+    from ..assembly_plan.drawing import plan_drawing
+
+    options = dict(options or {})
+    if set(options) - {"locale", "diagnostic"} or options.get("locale", "en") not in DRAWING_LOCALES:
+        return _drawing_error("INPUT_INVALID", f"options is a dict of ['diagnostic', 'locale']; locale is one of {', '.join(DRAWING_LOCALES)}")
+    try:
+        revision, _, context = _plan_inputs(plan, project, mechanical, catalog)
+        check = check_content(revision, context, derive_findings=[f for f in revision.findings if f.source.value == "DERIVE"])
+        outcome = plan_drawing(revision, None, context=context, locale=options.get("locale", "en"),
+                               diagnostic=bool(options.get("diagnostic", False)), findings=check.findings, validation=check.validation)
+    except (AssemblyPlanError, MechanicalCatalogError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except AssemblyDrawingError as exc:
+        return {"ok": False, "error": exc.as_dict()}
+    except LocalRunError as exc:
+        return _error(exc.problems)
+    return {"ok": True, "status": outcome.summary(), "files": outcome.files()}
+
+
+@api_method("assembly")
+def assembly_plan_bom(plan: Any, options: Any = None) -> dict[str, Any]:
+    """The design BOM (default) or, with ``options {"purchase": true, "schema_version": "2" | "1"}``, the purchase BOM of a
+    plan revision: ``{"ok", "bom", "report"}`` (the purchase BOM is the body ``order quote`` sends; ``report`` is null for
+    a design BOM)."""
+
+    from ..assembly_plan import AssemblyPlanError
+    from ..assembly_plan.bom import design_bom, purchase_bom
+    from ..assembly_plan.contract import AssemblyPlanRevisionV1
+
+    options = dict(options or {})
+    try:
+        revision = AssemblyPlanRevisionV1.model_validate(plan)
+        if options.get("purchase"):
+            bom, report = purchase_bom(revision, schema_version=str(options.get("schema_version", "2")))
+        else:
+            bom, report = design_bom(revision), None
+    except (AssemblyPlanError, ValidationError) as exc:
+        return _assembly_plan_error(exc)
+    except ValueError as exc:
+        return _drawing_error("INPUT_INVALID", str(exc))
+    return {"ok": True, "bom": bom, "report": report}
+
+
+@api_method("assembly")
+def mechanical_catalog(mechanical: Any, options: Any = None) -> dict[str, Any]:
+    """The identities of public mechanical catalog documents: ``options``: ``{"kind": POST | POST_HOLDER | MOUNT |
+    BREADBOARD, "sku": ...}`` (optional filters). Returns ``{"ok", "documents" (publisher, version, sha256), "identities"}``."""
+
+    from ..assembly_plan import MechanicalCatalogError
+
+    options = dict(options or {})
+    try:
+        sources = _plan_sources(mechanical)
+    except MechanicalCatalogError as exc:
+        return _assembly_plan_error(exc)
+    identities = [i for i in sources.identities() if options.get("kind") in (None, i.kind) and options.get("sku") in (None, i.opensci_sku)]
+    return {"ok": True, "documents": [r.model_dump(mode="json") for r in sources.binding()],
+            "identities": [i.payload() for i in identities]}
 
 
 # ---------------------------------------------------------------------------------------------- optical layout

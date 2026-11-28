@@ -3,7 +3,9 @@
 The generator reads the bytes of an opened delivery, a path, or already verified packages. Order of work, all
 fail-closed:
 
-1. verify the Assembly Preview Package (canonical contract verifier) and require its commercial binding;
+1. verify the Assembly Preview Package (canonical contract verifier) and require its commercial binding -- or its
+   LOCAL_PLAN binding (a package generated on this device from a local assembly plan), drawn as schema 4.2 with the
+   plan's design BOM (``design_bom``, bound by its digest) as the parts legend;
 2. verify the Assembly Detail Package against it (top-level version, then the schema BEFORE anything walks the
    untrusted document, content hash, canonical bytes, binding field by field, every dimension measured from the
    preview poses, required drawing facts); a document nested too deeply is refused like any malformed one;
@@ -35,10 +37,9 @@ from pydantic import ValidationError
 
 from .._vendor.shared_contracts.assembly_detail import (
     ASSEMBLY_DETAIL_SCHEMA_ID,
-    ASSEMBLY_DETAIL_SCHEMA_VERSION,
+    ASSEMBLY_DETAIL_SCHEMA_VERSIONS,
     ASSEMBLY_DRAWING_GENERATOR_ID,
     ASSEMBLY_DRAWING_RESULT_SCHEMA_ID,
-    ASSEMBLY_DRAWING_SCHEMA_VERSION,
     DRAWING_DESCRIPTION,
     DRAWING_LOCALES,
     DRAWING_MANIFEST_PATH,
@@ -46,6 +47,7 @@ from .._vendor.shared_contracts.assembly_detail import (
     DRAWING_RESULT_PATH,
     DRAWING_STATUS_FOR_VALIDATION,
     DRAWING_SVG_PATH,
+    LOCAL_DRAWING_DESCRIPTION,
     MAX_DETAIL_BYTES,
     AssemblyDetailPackageError,
     AssemblyDetailPackageV1,
@@ -54,6 +56,7 @@ from .._vendor.shared_contracts.assembly_detail import (
     DrawingStatusV1,
     VerifiedAssemblyDetailV1,
     drawing_manifest_for,
+    drawing_schema_version_for,
     load_assembly_detail,
     verify_drawing_outputs,
 )
@@ -72,11 +75,11 @@ from ..output_files import replace_files
 from .errors import AssemblyDrawingError, DrawingErrorCode
 from .alignment import spacing_rows
 from .geometry import VIEWS
-from .i18n import CATALOG, DEFAULT_LOCALE
+from .i18n import DEFAULT_LOCALE
 from .model import drawing_facts
 from .pdf import render_pdf
 from .sheet import LayoutError, SheetBuilder
-from .steps import Words, assembly_steps, customer_rows
+from .steps import assembly_steps, customer_rows, words_for
 from .svg import render_svg
 from .text import value_text
 
@@ -125,7 +128,8 @@ class AssemblyDrawing:
 
 def load_preview(source: PreviewSource) -> AssemblyPreviewPackageV1:
     """Verify an Assembly Preview Package (any source ``os_optics.assembly`` accepts) or raise
-    ``PREVIEW_PACKAGE_INVALID``; a package without a commercial binding raises ``PREVIEW_NOT_COMMERCIALLY_BOUND``."""
+    ``PREVIEW_PACKAGE_INVALID``; a package bound neither to a commercial resolution and its Customer Purchase BOM nor to
+    a local assembly plan (LOCAL_PLAN) raises ``PREVIEW_NOT_COMMERCIALLY_BOUND``."""
 
     try:
         package = load_assembly_preview(source)
@@ -138,7 +142,7 @@ def load_preview(source: PreviewSource) -> AssemblyPreviewPackageV1:
     except (TypeError, ValueError) as exc:
         raise AssemblyDrawingError(DrawingErrorCode.PREVIEW_PACKAGE_INVALID, (f"not a package: {type(exc).__name__}",)) from None
     binding = package.manifest.binding
-    if binding.commercial_resolution_id is None or binding.commercial_bom is None:
+    if not binding.local and (binding.commercial_resolution_id is None or binding.commercial_bom is None):
         raise AssemblyDrawingError(DrawingErrorCode.PREVIEW_NOT_COMMERCIALLY_BOUND, (
             "the preview package is not bound to a commercial resolution and its Customer Purchase BOM",))
     return package
@@ -195,9 +199,9 @@ def load_assembly_detail_package(source: DetailSource, preview: PreviewSource, *
         raise AssemblyDrawingError(malformed, (f"detail package is not JSON: {type(exc).__name__}",)) from None
     if not isinstance(document, dict):
         raise AssemblyDrawingError(malformed, ("detail package is not a JSON object",))
-    if document.get("schema") != ASSEMBLY_DETAIL_SCHEMA_ID or document.get("schema_version") != ASSEMBLY_DETAIL_SCHEMA_VERSION:
+    if document.get("schema") != ASSEMBLY_DETAIL_SCHEMA_ID or document.get("schema_version") not in ASSEMBLY_DETAIL_SCHEMA_VERSIONS:
         raise AssemblyDrawingError(DrawingErrorCode.DETAIL_UNSUPPORTED_VERSION, (
-            f"supported: {ASSEMBLY_DETAIL_SCHEMA_ID} {ASSEMBLY_DETAIL_SCHEMA_VERSION}",))
+            f"supported: {ASSEMBLY_DETAIL_SCHEMA_ID} {' / '.join(ASSEMBLY_DETAIL_SCHEMA_VERSIONS)}",))
     try:  # the model re-computes detail_content_hash (osc1) over the validated, schema-bounded document
         parsed = AssemblyDetailPackageV1.model_validate_json(data)
     except ValidationError as exc:
@@ -255,9 +259,10 @@ def _metadata(detail: VerifiedAssemblyDetailV1, validation: AssemblyLocalValidat
     manifest = detail.preview.manifest
     binding = manifest.binding
     release = detail.detail.release
+    plan = binding.local_plan
     return {
         "schema": SVG_METADATA_SCHEMA,
-        "schema_version": ASSEMBLY_DRAWING_SCHEMA_VERSION,
+        "schema_version": LOCAL_SCHEMA_VERSION if binding.local else COMMERCIAL_SCHEMA_VERSION,
         "generator_id": ASSEMBLY_DRAWING_GENERATOR_ID,
         "generator_version": GENERATOR_VERSION,
         "locale": locale,
@@ -265,7 +270,9 @@ def _metadata(detail: VerifiedAssemblyDetailV1, validation: AssemblyLocalValidat
         "customer_display_name": release.customer_display_name,
         "drawing_status": status.value,
         "delivery_ready": status is DrawingStatusV1.DETAILED_ASSEMBLY_DRAWING,
-        "description": DRAWING_DESCRIPTION,
+        "description": LOCAL_DRAWING_DESCRIPTION if binding.local else DRAWING_DESCRIPTION,
+        **({"plan_id": plan.plan_id, "plan_revision": plan.revision, "plan_digest": plan.plan_digest.digest,
+            "design_bom_hash": plan.design_bom.bom_hash.digest} if plan is not None else {}),
         "project_hash": binding.project.project_hash.digest,
         "local_validation_hash": binding.local_validation_hash.digest if binding.local_validation_hash else None,
         "commercial_resolution_id": binding.commercial_resolution_id,
@@ -298,15 +305,53 @@ def _usable_validation(validation: AssemblyLocalValidationV1 | None, preview: As
             and validation.checker.engine_build_id == engine_build_id())
 
 
+def legend_supply_of(preview: AssemblyPreviewPackageV1, design_bom: Mapping[str, Any] | None) -> dict[str, str]:
+    """Who supplies each part of a LOCAL_PLAN package (``{part_ref: supply}``) from its design BOM document, which must
+    be the one the package binds (``bom_digest`` = the binding's design BOM hash = the osc1 digest of the document
+    without that field) and must name every part with a design BOM line. Raises ``MISSING_REQUIRED_FACT``."""
+
+    binding = preview.manifest.binding
+    plan = binding.local_plan
+    if plan is None:
+        return {}
+    problem = "the drawing of a local assembly plan needs the design BOM the package binds"
+    if not isinstance(design_bom, Mapping):
+        raise AssemblyDrawingError(DrawingErrorCode.MISSING_REQUIRED_FACT, (problem,))
+    try:
+        body = {k: v for k, v in design_bom.items() if k != "bom_digest"}
+        if design_bom.get("bom_digest") != plan.design_bom.bom_hash.digest or osc1_digest(body) != plan.design_bom.bom_hash.digest:
+            raise ValueError(problem)
+        supply = {item_id: line["supply"] for line in design_bom["lines"] for item_id in line["item_ids"]}
+    except (KeyError, TypeError, ValueError):
+        raise AssemblyDrawingError(DrawingErrorCode.MISSING_REQUIRED_FACT, (problem,)) from None
+    out = {}
+    for part in preview.scene.parts:
+        if part.commercial_line_ref is None:
+            continue
+        if supply.get(part.part_ref) not in LEGEND_SUPPLIES:
+            raise AssemblyDrawingError(DrawingErrorCode.MISSING_REQUIRED_FACT, (
+                f"part {part.part_ref} has no supply in the design BOM the package binds",))
+        out[part.part_ref] = supply[part.part_ref]
+    return out
+
+
+#: The supplies a 4.2 parts legend row states.
+LEGEND_SUPPLIES = frozenset({"OPENSCI", "CUSTOMER_OWNED", "UNRESOLVED"})
+COMMERCIAL_SCHEMA_VERSION = "4.1"
+LOCAL_SCHEMA_VERSION = "4.2"
+
+
 def generate_assembly_drawing(preview_source: PreviewSource, detail_source: DetailSource, *,
                               expected_preview_content_hash: str | None = None,
                               expected_detail_content_hash: str | None = None, locale: str = DEFAULT_LOCALE,
-                              validation: AssemblyLocalValidationV1 | None = None, diagnostic: bool = False) -> AssemblyDrawing:
+                              validation: AssemblyLocalValidationV1 | None = None, diagnostic: bool = False,
+                              design_bom: Mapping[str, Any] | None = None) -> AssemblyDrawing:
     """Generate the drawing of a preview package and its detail package (see the module docstring), written in
     ``locale`` (``en`` or ``zh-CN``). ``validation``: the local assembly validation the caller already ran (e.g. with
     its own tolerances); it is used when it is of this package and the running checker build, otherwise the check
     runs here with the default tolerances. ``diagnostic``: draw a check that did not pass as a diagnostic sheet instead
-    of refusing it."""
+    of refusing it. ``design_bom``: the design BOM document of a LOCAL_PLAN package (required for one; its parts legend
+    states who supplies each part)."""
 
     if locale not in DRAWING_LOCALES:
         raise AssemblyDrawingError(DrawingErrorCode.INPUT_INVALID, (f"locale must be one of {', '.join(DRAWING_LOCALES)}",))
@@ -314,6 +359,7 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
     if expected_preview_content_hash is not None and preview.content_hash != expected_preview_content_hash:
         raise AssemblyDrawingError(DrawingErrorCode.PREVIEW_PACKAGE_INVALID, ("the preview package is not the expected one",))
     detail = load_assembly_detail_package(detail_source, preview, expected_content_hash=expected_detail_content_hash)
+    supply = legend_supply_of(preview, design_bom)
     if not _usable_validation(validation, preview):
         validation = validate_assembly_layout(preview)
     state = validation.status.value
@@ -337,7 +383,7 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
                            validation_issues=_issue_lines(validation, status), checker_version=validation.checker.checker_version,
                            validation_interference=validation.summary.interference.value,
                            steps=steps, generator_version=GENERATOR_VERSION, locale=locale,
-                           checks_passed=checks_passed, checks_evaluated=checks_evaluated)
+                           checks_passed=checks_passed, checks_evaluated=checks_evaluated, legend_supply=supply)
     try:
         canvas = builder.build()
     except LayoutError as exc:
@@ -347,15 +393,21 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
 
     manifest = preview.manifest
     binding = manifest.binding
-    drawing_binding = {
+    local = binding.local
+    drawing_binding: dict[str, Any] = {
         "project": binding.project.model_dump(mode="json", by_alias=True, exclude_none=True),
-        "commercial_resolution_id": binding.commercial_resolution_id,
-        "commercial_bom": binding.commercial_bom.model_dump(mode="json", by_alias=True, exclude_none=True),  # type: ignore[union-attr]
         "preview_package_content_hash": manifest.package_content_hash,
         "preview_package_revision": manifest.package_revision,
         "detail_content_hash": detail.detail.detail_content_hash,
         "release": detail.detail.release.model_dump(mode="json", by_alias=True, exclude_none=True),
     }
+    if local:
+        drawing_binding["local_plan"] = binding.local_plan.model_dump(mode="json", by_alias=True, exclude_none=True)  # type: ignore[union-attr]
+        legend_bom = {"source": "DESIGN_BOM", "design_bom": drawing_binding["local_plan"]["design_bom"]}
+    else:
+        drawing_binding["commercial_resolution_id"] = binding.commercial_resolution_id
+        drawing_binding["commercial_bom"] = binding.commercial_bom.model_dump(mode="json", by_alias=True, exclude_none=True)  # type: ignore[union-attr]
+        legend_bom = {"source": "CUSTOMER_PURCHASE_BOM", "commercial_bom": drawing_binding["commercial_bom"]}
     if binding.local_validation_hash is not None:
         drawing_binding["local_validation_hash"] = binding.local_validation_hash.model_dump(mode="json", by_alias=True, exclude_none=True)
     dims = []
@@ -371,7 +423,7 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
             seen_codes.append(item.code.value)
     content: dict[str, Any] = {
         "schema": ASSEMBLY_DRAWING_RESULT_SCHEMA_ID,
-        "schema_version": ASSEMBLY_DRAWING_SCHEMA_VERSION,
+        "schema_version": LOCAL_SCHEMA_VERSION if local else COMMERCIAL_SCHEMA_VERSION,
         "generator": {"generator_id": ASSEMBLY_DRAWING_GENERATOR_ID, "generator_version": GENERATOR_VERSION,
                       "engine_package": DISTRIBUTION_NAME, "engine_version": ENGINE_VERSION, "engine_build_id": engine_build_id()},
         "binding": drawing_binding,
@@ -381,7 +433,7 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
         "locale": locale,
         "drawing_status": status.value,
         "delivery_ready": status is DrawingStatusV1.DETAILED_ASSEMBLY_DRAWING,
-        "description": DRAWING_DESCRIPTION,
+        "description": LOCAL_DRAWING_DESCRIPTION if local else DRAWING_DESCRIPTION,
         "sheet": builder.sheet.key,
         "views": [{"view": view.key, "scale": scales[view.key], "part_refs": record.views[view.key].visible_parts,
                    "visible_segment_count": record.views[view.key].visible_segments,
@@ -389,16 +441,16 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
         "dimensions": dims,
         "balloons": [{"commercial_line_ref": p.line_ref, "part_ref": p.part_ref, "views": record.balloon_views[p.part_ref]}
                      for p in facts.bom_parts()],
-        "parts_legend": {"source": "CUSTOMER_PURCHASE_BOM", "commercial_bom": drawing_binding["commercial_bom"],
+        "parts_legend": {**legend_bom,
                          "rows": [{"commercial_line_ref": p.line_ref, "part_ref": p.part_ref, "opensci_sku": p.sku,
-                                   "display_name": p.display_name}
+                                   "display_name": p.display_name, **({"supply": supply[p.part_ref]} if local else {})}
                                   for p in sorted(facts.bom_parts(), key=lambda p: (p.line_ref, p.part_ref))]},
         "assembly_steps": [{"step": n, "action": s.action, "text": s.text,
                             **({"part_ref": s.part_ref} if s.part_ref else {}),
                             **({"design_instance_id": s.design_instance_id} if s.design_instance_id else {}),
                             **({"commercial_line_ref": s.line_ref} if s.line_ref else {})} for n, s in enumerate(steps, start=1)],
         "customer_supplied_components": [row.result() for row in customer_rows(facts, locale)],
-        "optical_spacing": [r for r in (row.result() for row in spacing_rows(facts, Words(locale, table=facts.board.customer_table))) if r is not None],
+        "optical_spacing": [r for r in (row.result() for row in spacing_rows(facts, words_for(facts, locale))) if r is not None],
         "notes": seen_codes,
     }
     try:
@@ -408,13 +460,18 @@ def generate_assembly_drawing(preview_source: PreviewSource, detail_source: Deta
         where = ".".join(str(p) for p in errors[0].get("loc", ())) if errors else ""
         raise AssemblyDrawingError(DrawingErrorCode.MISSING_REQUIRED_FACT, (f"the drawing result does not validate at {where}",)) from None
 
+    if result.schema_version != drawing_schema_version_for(result.binding):  # pragma: no cover - the model checks it
+        raise AssemblyDrawingError(DrawingErrorCode.MISSING_REQUIRED_FACT, ("the drawing result states another version",))
     metadata = _metadata(detail, validation, status, scales, record, dims, locale)
-    title = CATALOG.text(locale, {DrawingStatusV1.DETAILED_ASSEMBLY_DRAWING: "title",
-                                  DrawingStatusV1.DIAGNOSTIC_VALIDATION_FAILED: "title.diagnostic",
-                                  DrawingStatusV1.DIAGNOSTIC_VALIDATION_INCOMPLETE: "title.incomplete"}[status])
-    description = CATALOG.text(locale, "svg.desc", title=title, resolution=binding.commercial_resolution_id,
-                               preview=manifest.package_content_hash, revision=manifest.package_revision,
-                               detail=detail.detail.detail_content_hash, description=CATALOG.text(locale, "description"))
+    words = words_for(facts, locale)
+    title = words({DrawingStatusV1.DETAILED_ASSEMBLY_DRAWING: "title",
+                   DrawingStatusV1.DIAGNOSTIC_VALIDATION_FAILED: "title.diagnostic",
+                   DrawingStatusV1.DIAGNOSTIC_VALIDATION_INCOMPLETE: "title.incomplete"}[status])
+    source = (f"{binding.local_plan.plan_id} r{binding.local_plan.revision}" if local  # type: ignore[union-attr]
+              else binding.commercial_resolution_id)
+    description = words("svg.desc", title=title, resolution=source, preview=manifest.package_content_hash,
+                        revision=manifest.package_revision, detail=detail.detail.detail_content_hash,
+                        description=words("description"))
     svg = render_svg(canvas, title, description, metadata, locale=locale)
     pdf = render_pdf(canvas, title)
     files = {DRAWING_SVG_PATH: svg, DRAWING_PDF_PATH: pdf, DRAWING_RESULT_PATH: json_file_bytes(result.payload())}

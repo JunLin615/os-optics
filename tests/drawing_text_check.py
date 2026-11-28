@@ -108,7 +108,7 @@ SCENE_FIELDS = (
 )
 #: Public manifest fields (``**`` = every string below).
 MANIFEST_FIELDS = ("package_content_hash", "binding.project.**", "binding.local_validation_hash.**",
-                   "binding.commercial_resolution_id", "binding.commercial_bom.**")
+                   "binding.commercial_resolution_id", "binding.commercial_bom.**", "binding.basis", "binding.local_plan.**")
 DETAIL_FIELDS = ("detail_content_hash", "release.**", "dimensions.*.dim_ref", "dimensions.*.kind", "dimensions.*.basis",
                  "dimensions.*.axis", "dimensions.*.subject_part_ref", "customer_supplied_models.**",
                  "line_display_names_zh_cn.**")

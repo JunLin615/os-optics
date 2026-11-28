@@ -254,8 +254,8 @@ jobs:
     # The distributions of this commit, as the release workflow builds them (scripts/build_dist.py: pinned build tools,
     # SOURCE_DATE_EPOCH = commit time), rebuilt once to show the build reproduces, checked (twine --strict and
     # scripts/check_dist.py: MIT metadata and licence files, project URLs, contents), installed into a clean virtual
-    # environment and run through the documented quickstart. The artifact carries the wheel, the sdist and
-    # identity.json (commit, tree, version, Engine build id, SHA-256 and size of each file).
+    # environment and run through the documented quickstart and the local assembly plan journey. The artifact carries the
+    # wheel, the sdist and identity.json (commit, tree, version, Engine build id, SHA-256 and size of each file).
     name: candidate (build, check, clean install, quickstart)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -299,6 +299,15 @@ jobs:
           assert "site-packages" in os_optics.__file__, os_optics.__file__
           print(json.dumps({"version": os_optics.__version__, "engine_build_id": engine_build_id(), "file": os_optics.__file__}))
           PY
+      - name: The local assembly plan journey on the installed candidate (no token, no network)
+        # scripts/local_assembly_smoke.py: derive, edit, check, preview, view snapshot, draw, design and purchase BOM and
+        # history with the synthetic fixture catalogs, run from outside the checkout with the clean environment's Python.
+        run: |
+          cd "$RUNNER_TEMP"
+          quickstart/.venv/bin/python -I "$GITHUB_WORKSPACE/scripts/local_assembly_smoke.py" \
+            --catalog "$GITHUB_WORKSPACE/tests/fixtures/catalog/test_optical_catalog.v2.json" \
+            --mechanical "$GITHUB_WORKSPACE/tests/fixtures/mechanical/test_mechanical_catalog.v1.json" \
+            --workdir "$RUNNER_TEMP/assembly-smoke"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: candidate-dist

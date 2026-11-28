@@ -525,24 +525,13 @@ def test_the_whole_flow_keeps_secrets_out_and_writes_nothing_decrypted(stub, run
     assert set(drawing.files) == DRAWING_FILES
     assert sorted(p.name for p in work.rglob("*")) == [] and sorted(temp.rglob("*")) == []
 
-    first = len(stub.state.requests)
-    uploaded = client.upload_assembly_results(rid, drawing=drawing, preview=preview)
-    posts = [r for r in stub.state.requests[first:] if r["method"] == "POST"]
-    assert [r["path"] for r in posts] == ["/api/v1/artifact-sets"] * 2
-    assert [uploaded["validation"]["artifact_kind"], uploaded["drawing"]["artifact_kind"]] == [
-        "ASSEMBLY_LOCAL_VALIDATION", "ASSEMBLY_DRAWING"]
-    order_of_kinds = [json.loads(r["body"].split(b"\r\n\r\n", 1)[1].split(b"\r\n--", 1)[0])["artifact_kind"] for r in posts]
-    assert order_of_kinds == ["ASSEMBLY_LOCAL_VALIDATION", "ASSEMBLY_DRAWING"]
-    assert [r["headers"]["Idempotency-Key"] for r in posts] == [
-        idempotency_key_for("artifact-set", uploaded[part]["artifact_set_digest"]) for part in ("validation", "drawing")]
-    assert all(view["replayed"] is False for view in uploaded.values())
-    again = client.upload_assembly_results(rid, drawing=drawing, preview=preview)
-    assert all(view["replayed"] is True for view in again.values()) and len(stub.state.artifact_sets) == 2
-
+    # drawings are never uploaded (#557): the client has no upload call and posted no artifact set
+    assert not hasattr(client, "upload_assembly_results")
+    assert not any(r["path"] == "/api/v1/artifact-sets" and r["method"] == "POST" for r in stub.state.requests)
+    # an earlier service still serves artifact sets stored before; they are read back and checked as before
+    uploaded = {"drawing": _stored_drawing_set(stub, rid, drawing)}
     listed = client.artifact_sets(rid)["artifact_sets"]
-    assert [s["artifact_kind"] for s in listed] == ["ASSEMBLY_LOCAL_VALIDATION", "ASSEMBLY_DRAWING"]
-    assert client.artifact_sets(rid, artifact_kind="ASSEMBLY_DRAWING")["artifact_sets"][0]["artifact_set_id"] == \
-        uploaded["drawing"]["artifact_set_id"]
+    assert [s["artifact_kind"] for s in listed] == ["ASSEMBLY_DRAWING"]
     drawing_set = client.artifact_set(uploaded["drawing"]["artifact_set_id"])
     for entry in drawing_set["files"]:
         assert client.artifact_file(drawing_set["artifact_set_id"], entry["role"]) == drawing.files[entry["filename"]]
@@ -570,61 +559,34 @@ def test_the_whole_flow_keeps_secrets_out_and_writes_nothing_decrypted(stub, run
     assert_no_secret("\n".join(seen), AGENT, AGENT[37:], *secrets_of(deliveries))
 
 
-def test_upload_limits_are_typed_not_repeated_and_a_busy_upload_is_repeated_with_its_key(stub):
-    """A 429 upload refusal (hourly limit, pause after refused uploads) reaches the caller with its
-    recovery and the advised wait, sent once; a 503 ARTIFACT_UPLOAD_CAPACITY_BUSY is repeated with the same key."""
+def _stored_drawing_set(stub, resolution_id: str, drawing) -> dict:
+    """An artifact set an earlier service stored for ``drawing`` (seeded into the stub: the client no longer uploads)."""
 
-    from commerce_stub import Refusal
-    from os_optics.assembly import validate_assembly_layout
+    import hashlib
 
-    client = client_for(stub, retries=3)
-    preview = client.assembly_preview(RESOLUTION_ID)
-    validation = validate_assembly_layout(preview)
-    for code, details in (("ARTIFACT_UPLOAD_RATE_LIMITED", {"limit": "MEMBER_UPLOADS_PER_HOUR",
-                                                             "retry_after_seconds": 1200}),
-                          ("ARTIFACT_UPLOAD_SUSPENDED", {"scope": "MEMBER", "retry_after_seconds": 86000})):
-        stub.state.artifact_upload_refusals = [Refusal(429, code, "uploads are limited", details,
-                                                       headers={"Retry-After": str(details["retry_after_seconds"])})]
-        sent = len(stub.state.requests)
-        with pytest.raises(OpenSciApiError) as limited:
-            client.upload_assembly_results(RESOLUTION_ID, validation=validation, preview=preview)
-        error = limited.value
-        assert (error.code, error.http_status, error.recovery) == (code, 429, Recovery.RETRY_LATER)
-        assert error.retry_after_seconds == details["retry_after_seconds"] and error.details == details
-        assert len(stub.state.requests) == sent + 1  # never repeated by the client
-    stub.state.artifact_upload_refusals = [Refusal(503, "ARTIFACT_UPLOAD_CAPACITY_BUSY", "busy",
-                                                   headers={"Retry-After": "1"})]
-    sent = len(stub.state.requests)
-    uploaded = client.upload_assembly_results(RESOLUTION_ID, validation=validation, preview=preview)
-    posts = [r for r in stub.state.requests[sent:] if r["method"] == "POST"]
-    key = idempotency_key_for("artifact-set", uploaded["validation"]["artifact_set_digest"])
-    assert [r["headers"]["Idempotency-Key"] for r in posts] == [key, key]
-    assert uploaded["validation"]["replayed"] is False
+    set_id = "00000000-0000-4000-8000-000000000001"
+    files = [{"role": entry.role.value, "filename": entry.path, "size_bytes": len(drawing.files[entry.path]),
+              "sha256": hashlib.sha256(drawing.files[entry.path]).hexdigest()} for entry in drawing.manifest.files]
+    view = {"schema": "opensci.client_assembly_artifact_set", "schema_version": "1.0", "artifact_set_id": set_id,
+            "artifact_kind": "ASSEMBLY_DRAWING", "commercial_resolution_id": resolution_id,
+            "artifact_set_digest": "0" * 64, "files": files, "replayed": False}
+    stub.state.artifact_sets[set_id] = view
+    for entry in drawing.manifest.files:
+        stub.state.artifact_files[(set_id, entry.role.value)] = drawing.files[entry.path]
+    return view
 
 
-def test_an_upload_stopped_part_way_carries_the_parts_already_stored(stub):
-    """``upload_assembly_results`` uploads the validation, then the drawing; an error that stops it carries what was
-    stored and read back (``partial_results``), so a caller can report it; an error of another call carries none."""
+def test_the_client_has_no_upload_path(stub):
+    """Uploads of local assembly validations and drawings are retired (#557): no client call posts an artifact set."""
 
-    from commerce_stub import Refusal
-    from os_optics.assembly import validate_assembly_layout
+    import inspect
+
+    from os_optics.client import api
 
     client = client_for(stub)
-    preview = client.assembly_preview(RESOLUTION_ID)
-    validation = validate_assembly_layout(preview)
-    refusal = Refusal(429, "ARTIFACT_UPLOAD_RATE_LIMITED", "uploads are limited", {"retry_after_seconds": 5})
-    stub.state.artifact_upload_refusals = [refusal]
-    with pytest.raises(OpenSciApiError) as first:
-        client.upload_assembly_results(RESOLUTION_ID, validation=validation, preview=preview)
-    assert first.value.partial_results == {}
-    assert OpenSciApiError("X", "y").partial_results is None
-    stored = client.upload_assembly_results(RESOLUTION_ID, validation=validation, preview=preview)
-    assert list(stored) == ["validation"]
-
-
-def test_upload_needs_something_and_refuses_another_resolution(stub):
-    with pytest.raises(ValueError):
-        client_for(stub).upload_assembly_results(RESOLUTION_ID)
+    assert not [name for name in dir(client) if "upload" in name]
+    assert '"POST", "/artifact-sets"' not in inspect.getsource(api)
+    assert "encode_multipart" not in inspect.getsource(api)
 
 
 def test_a_delivery_that_does_not_open_is_a_protected_content_error(stub, deliveries):

@@ -24,12 +24,14 @@ from ..local.submission import (
 )
 from .._version import __version__ as _engine_version
 from ..local.submission import submission_document as _submission_document
+from .bom_review import purchase_bom_body
 from .credentials import AccountToken, resolve_token
 from .errors import (
     API_URL_MISSING,
-    ARTIFACT_BINDING_OTHER_RESOLUTION,
     ARTIFACT_DOWNLOAD_MISMATCH,
+    RETIREMENT_CODES,
     RUN_DIRECTORY_INCONSISTENT,
+    TOKEN_MISSING,
     ArtifactIntegrityError,
     LocalInputError,
     OpenSciApiError,
@@ -44,16 +46,16 @@ from .transport import (
     ENV_API_URL,
     HttpResponse,
     Transport,
-    encode_multipart,
 )
 
 if TYPE_CHECKING:
     from .._vendor.shared_contracts.assembly_detail import VerifiedAssemblyDetailV1
     from .._vendor.shared_contracts.assembly_preview import AssemblyLocalValidationV1, AssemblyPreviewPackageV1, CheckerTolerancesV1
     from ..assembly_drawing import AssemblyDrawing
-    from ..client_artifacts import ClientArtifactUpload
 
 LOCALES = ("zh-CN", "en")
+#: The status of a service refusal for a request sent without a token (a service before the BOM-only release).
+HTTP_UNAUTHORIZED = 401
 ORDER_DOCUMENTS = {"order": "presentation", "quotation": "quotation/presentation", "contract": "contract/presentation"}
 TOKEN_PROFILES = ("agent", "review")
 DEFAULT_TOKEN_LIFETIME_HOURS = 168
@@ -350,13 +352,24 @@ class OpenSciClient:
     ``OpenSciClient.from_environment()`` reads ``OPENSCI_API_URL`` and finds the token (``os_optics.client.
     credentials``). Every call returns the service's JSON document (a ``dict``) or a verified local object, and raises
     ``OpenSciApiError`` (with ``code``, ``recovery``, ``http_status``, ``request_id``) when the service refuses or
-    cannot be reached."""
+    cannot be reached.
+
+    ``anonymous=True`` (the commands of routes the service has retired): without a token the client still sends its
+    requests, unauthenticated, because the service answers a retired route (``410``) before it authenticates; an
+    earlier service that answers ``401`` instead is reported as ``TOKEN_MISSING`` with its handoff
+    (``anonymous_refusal``). ``token`` is then None. ``submit`` never sends the design anonymously (an empty probe)."""
 
     def __init__(self, api_url: str, token: Any = None, *, timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  retries: int = DEFAULT_RETRIES, allow_insecure_http: bool = False,
                  environ: Mapping[str, str] | None = None,
-                 max_retry_seconds: float = DEFAULT_MAX_RETRY_SECONDS) -> None:
-        self._token = resolve_token(token, environ=environ)
+                 max_retry_seconds: float = DEFAULT_MAX_RETRY_SECONDS, anonymous: bool = False) -> None:
+        self._missing: OpenSciConfigurationError | None = None
+        try:
+            self._token: AccountToken | None = resolve_token(token, environ=environ)
+        except OpenSciConfigurationError as exc:
+            if not anonymous or exc.code != TOKEN_MISSING:
+                raise
+            self._token, self._missing = None, exc
         self._environ: Mapping[str, str] = os.environ if environ is None else environ
         self._http = Transport(api_url, self._token, timeout=timeout, retries=retries,
                                allow_insecure_http=allow_insecure_http, max_retry_seconds=max_retry_seconds)
@@ -381,10 +394,18 @@ class OpenSciClient:
         return self._http.api_url
 
     @property
-    def token(self) -> AccountToken:
-        """The Account token in use (``repr`` shows only its token id and source)."""
+    def token(self) -> AccountToken | None:
+        """The Account token in use (``repr`` shows only its token id and source); None for an anonymous client."""
 
         return self._token
+
+    def anonymous_refusal(self, error: OpenSciApiError) -> OpenSciApiError:
+        """For an anonymous client: the ``TOKEN_MISSING`` error (with its handoff) instead of a service's ``401``;
+        any other error unchanged."""
+
+        if self._missing is not None and error.http_status == HTTP_UNAUTHORIZED:
+            return self._missing
+        return error
 
     def __repr__(self) -> str:
         return f"OpenSciClient(api_url={self.api_url!r}, token={self._token!r})"
@@ -523,8 +544,20 @@ class OpenSciClient:
         so submitting the same run again returns the same resolution (``replayed: true``); after OpenSci changed its
         catalog, prices or supply since, the same call returns a new resolution on the current basis (the step after
         ``RESOLUTION_NO_LONGER_AVAILABLE``). Returns the resolution document: ``resolution_id`` and the Customer
-        Purchase BOM with prices."""
+        Purchase BOM with prices.
 
+        An anonymous client (``resolve`` without a token) never sends the design: it sends an empty probe, so the
+        BOM-only service's retirement (``ORDERING_BASIS_RETIRED``) still reaches the user, and otherwise refuses
+        ``TOKEN_MISSING`` (with its handoff)."""
+
+        if self._token is None:
+            try:
+                self._post("/commercial-submissions", {})
+            except OpenSciApiError as exc:
+                if exc.code in RETIREMENT_CODES or exc.http_status is None:
+                    raise
+            assert self._missing is not None
+            raise self._missing
         document = submission_document(run, customer_constraints=customer_constraints)
         key = idempotency_key or idempotency_key_for("submit", canonical_json_bytes(document))
         return self._post("/commercial-submissions", document, key=key).json()
@@ -532,7 +565,9 @@ class OpenSciClient:
     def submit_part_list(self, document: Mapping[str, Any], *, mechanical_supply: str | None = None,
                          idempotency_key: str | None = None) -> dict[str, Any]:
         """Price a part list for an Order (scope ``commercial:resolve``): OpenSci part numbers and quantities, without a
-        design (``part_list_document`` states the document and ``mechanical_supply``).
+        design (``part_list_document`` states the document and ``mechanical_supply``). The BOM-only service refuses
+        ``mechanical_supply`` ``DERIVED`` and ``mounting`` (``ORDER_OPTION_RETIRED``); ``quote_bom`` sends a purchase BOM
+        with its review and confirmation.
 
         The idempotency key is derived from the request body, so submitting the same list again returns the same
         resolution (``replayed: true``). Returns the resolution document, as ``submit`` does: ``resolution_id``, the
@@ -543,6 +578,23 @@ class OpenSciClient:
         range when known)."""
 
         body = part_list_document(document, mechanical_supply=mechanical_supply)
+        key = idempotency_key or idempotency_key_for("part-list-submit", canonical_json_bytes(body))
+        return self._post("/part-list-submissions", body, key=key).json()
+
+    def quote_bom(self, document: Mapping[str, Any], *, schema_version: str = "2",
+                  idempotency_key: str | None = None) -> dict[str, Any]:
+        """Quote a purchase BOM (scope ``commercial:resolve``): OpenSci part numbers and quantities, with their review
+        (``os_optics.client.bom_review``; the body is ``purchase_bom_body(document, schema_version=...)``).
+
+        The idempotency key is derived from the request body, so sending the same BOM again returns the same quote
+        (``replayed: true``), also after signing in. Returns the answer (HTTP 201): ``resolution_id`` and the
+        resolution with its ``bom_review`` (``ORDERABLE`` or ``CHANGES_REQUIRED``), the Customer Purchase BOM with prices
+        of the lines that can be supplied, and the agreement. A BOM none of whose lines can be supplied raises
+        ``BOM_NOT_ORDERABLE`` (422, ``details.bom_review``); a confirmation that does not match its review
+        ``BOM_CONFIRMATION_INVALID`` (422, ``details.problems``); a reviewed quote that no longer exists
+        ``RESOLUTION_NOT_FOUND`` (404)."""
+
+        body = purchase_bom_body(document, schema_version=schema_version)
         key = idempotency_key or idempotency_key_for("part-list-submit", canonical_json_bytes(body))
         return self._post("/part-list-submissions", body, key=key).json()
 
@@ -657,8 +709,8 @@ class OpenSciClient:
         completed; without it, a refusal) and the refusals are those of
         ``generate_assembly_drawing`` (``AssemblyDrawingError``); ``locale`` is the language of the sheet (``en`` or
         ``zh-CN``). ``validation``: a local assembly validation of the same preview already run on this device (e.g.
-        with your own tolerances), used instead of running the check again. Upload the result with
-        ``upload_assembly_results``."""
+        with your own tolerances), used instead of running the check again. Nothing is uploaded (drawings stay on this
+        device)."""
 
         from ..assembly_drawing import generate_assembly_drawing
 
@@ -670,59 +722,8 @@ class OpenSciClient:
         return drawing
 
     # ------------------------------------------------------------------------------------------ artifacts
-
-    def _upload(self, resolution_id: str, upload: ClientArtifactUpload) -> dict[str, Any]:
-        bound = upload.manifest.binding.commercial_resolution_id
-        if bound != resolution_id:
-            raise LocalInputError(ARTIFACT_BINDING_OTHER_RESOLUTION, "the artifact belongs to another resolution",
-                                  details={"resolution_id": resolution_id, "artifact_resolution_id": bound},
-                                  recovery=Recovery.FIX_REQUEST)
-        body, content_type = encode_multipart(upload.multipart_fields(), "opensci-" + secrets.token_hex(BOUNDARY_BYTES))
-        key = idempotency_key_for("artifact-set", upload.artifact_set_digest)
-        created = self._http.request("POST", "/artifact-sets", data=body, content_type=content_type,
-                                     idempotency_key=key).json()
-        stored = self.artifact_set(created["artifact_set_id"])
-        if stored.get("artifact_set_digest") != upload.artifact_set_digest:
-            raise ArtifactIntegrityError(ARTIFACT_DOWNLOAD_MISMATCH, "the stored artifact set is not the uploaded one",
-                                         details={"artifact_set_id": created["artifact_set_id"]},
-                                         recovery=Recovery.CONTACT_OPENSCI)
-        return {**stored, "replayed": bool(created.get("replayed", False))}
-
-    def upload_assembly_results(self, resolution_id: str, *, validation: AssemblyLocalValidationV1 | None = None,
-                                drawing: AssemblyDrawing | None = None,
-                                preview: AssemblyPreviewPackageV1 | None = None) -> dict[str, Any]:
-        """Upload what this device computed for a resolution and read it back (scopes
-        ``commercial:assembly-artifact:write`` and ``:read``).
-
-        ``validation`` (default: the validation the drawing was generated with) is uploaded first, then ``drawing``;
-        each upload's idempotency key is its artifact set digest, so repeating the call stores nothing twice. The
-        validation upload needs the opened ``preview`` (fetched when not given). Returns ``{"validation": <artifact
-        set>, "drawing": <artifact set>}`` (the parts uploaded). An ``OpenSciApiError`` that stops it carries the parts
-        already uploaded and read back as ``partial_results``."""
-        results: dict[str, Any] = {}
-        try:
-            self._upload_assembly_parts(results, resolution_id, validation, drawing, preview)
-        except OpenSciApiError as exc:
-            exc.partial_results = dict(results)
-            raise
-        return results
-
-    def _upload_assembly_parts(self, results: dict[str, Any], resolution_id: str, validation: AssemblyLocalValidationV1 | None,
-                               drawing: AssemblyDrawing | None, preview: AssemblyPreviewPackageV1 | None) -> None:
-        """The uploads of ``upload_assembly_results``, each put into ``results`` once it is stored and read back."""
-
-        from ..client_artifacts import drawing_artifact_upload, drawing_kind_for, validation_artifact_upload
-
-        if validation is None and drawing is None:
-            raise ValueError("give validation, drawing or both")
-        if validation is None and drawing is not None:
-            validation = drawing.validation
-        if validation is not None:
-            package = preview if preview is not None else self.assembly_preview(resolution_id)
-            results["validation"] = self._upload(resolution_id, validation_artifact_upload(package, validation))
-        if drawing is not None:
-            kind = drawing_kind_for(drawing.drawing_status)
-            results["drawing"] = self._upload(resolution_id, drawing_artifact_upload(drawing, kind=kind))
+    # (Uploads of local assembly validations and drawings are retired: drawings stay on this device. The read routes
+    # below are answered by a service before the BOM-only release; the BOM-only service answers 410 ROUTE_RETIRED.)
 
     def artifact_sets(self, resolution_id: str, *, artifact_kind: str | None = None) -> dict[str, Any]:
         """The resolution's artifact sets, oldest first (optionally of one ``artifact_kind``)."""

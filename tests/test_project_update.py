@@ -243,7 +243,7 @@ def test_the_python_function_raises_the_same_refusals():
 
 def test_capabilities_name_the_operations_warnings_and_freshness():
     caps = json_api.capabilities()
-    assert caps["json_api_version"] == "1.8"
+    assert caps["json_api_version"] == "1.9"
     assert caps["project_ops"]["ops"] == list(PROJECT_OPS)
     assert caps["project_ops"]["options"] == ["expected_project_hash", "require_check"]
     assert caps["project_ops"]["error_codes"] == ["PROJECT_OP_INVALID", "PROJECT_REJECTED", "PROJECT_CHANGED"]

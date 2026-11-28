@@ -18,6 +18,13 @@ from pathlib import Path
 
 USAGE_ERROR = 64
 VIEW_INPUT_ERROR = 65
+PLAN_DIR_ERROR = 66
+#: What ``view TARGET`` opens: a run directory, an Assembly Preview Package (a ``.zip`` archive or a directory with
+#: ``manifest.json`` and ``scene.json``) or a local assembly plan directory (``plan.json`` and ``history.jsonl``).
+TARGET_RUN, TARGET_PACKAGE, TARGET_PLAN = "RUN", "PACKAGE", "PLAN"
+PACKAGE_SUFFIX = ".zip"
+PACKAGE_FILES = ("manifest.json", "scene.json")
+PLAN_FILES = ("plan.json", "history.jsonl")
 SIZE_SEPARATOR = "x"
 DEFAULT_SNAPSHOT_SIZE = "1280x960"
 FRAME_NAMES = ("scene", "optics")
@@ -53,16 +60,32 @@ VIEW_DESCRIPTION = (
     "view_direction, up, target_mm, distance_mm, angle_to_axis_deg, elevation_deg, roll_deg). The browser page takes the "
     "same camera from its address: '#camera=86,8' (also ',ROLL,DISTANCE_MM'), and '&focus=L2' frames that element."
 )
-VIEW_EPILOG = ("exit codes: 0 = shown / written, 64 = usage error or unwritable output, 65 = RUN_DIR holds no readable optical view "
-               "(JSON error on stdout)")
+VIEW_DESCRIPTION += (
+    " TARGET may also be an Assembly Preview Package (a .zip archive or a package directory, e.g. written by 'os-optics "
+    "assembly plan preview') or a local assembly plan directory ('os-optics assembly plan derive --out PLAN'): its assembly "
+    "opens without a token or a network connection, every part coloured by its checks (class colour: passed; amber: "
+    "warning; red: failed or an error finding; grey: not evaluated), and each part's details state its check status, its "
+    "findings, its design BOM line and who supplies it. --finding FINDING_ID highlights and frames the part or pair of one "
+    "plan finding; --revision N opens an earlier plan revision; --no-checks shows a package without its layout check."
+)
+VIEW_EPILOG = ("exit codes: 0 = shown / written, 64 = usage error or unwritable output, 65 = TARGET holds no readable view: no "
+               "optical view, no verifiable package, a plan that cannot be shown (JSON error on stdout), 66 = the plan directory "
+               "is inconsistent")
 
 
 def register(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     parser = subparsers.add_parser("view", help="open a run's 3D view in the browser, or write snapshots / a self-contained HTML file",
                                    description=VIEW_DESCRIPTION, epilog=VIEW_EPILOG)
-    parser.add_argument("run_dir", nargs="*", metavar="RUN_DIR",
-                        help="a run directory written by 'os-optics project run --out-dir'; several with --snapshot DIR: one "
-                             "subdirectory of DIR per run, named after the run directory")
+    parser.add_argument("run_dir", nargs="*", metavar="TARGET",
+                        help="a run directory written by 'os-optics project run --out-dir' (several with --snapshot DIR: one "
+                             "subdirectory of DIR per run, named after the run directory), an Assembly Preview Package (.zip or "
+                             "directory) or a local assembly plan directory")
+    parser.add_argument("--revision", type=int, metavar="N", help="plan directory: show revision N (default: the head revision)")
+    parser.add_argument("--mechanical", action="append", metavar="FILE",
+                        help="plan directory: a mechanical catalog document the plan binds (repeatable; default: the local store "
+                             "and the plan's own copies)")
+    parser.add_argument("--finding", metavar="FINDING_ID", help="plan directory: highlight and frame the part or pair of this finding")
+    parser.add_argument("--no-checks", action="store_true", help="package: show it without running its layout check")
     parser.add_argument("--no-browser", action="store_true", help="serve the page and print its address instead of opening a browser")
     parser.add_argument("--write-html", metavar="PATH", help="write one self-contained HTML file (three.js included) and exit")
     parser.add_argument("--snapshot", metavar="DIR", help="write <view>.png, scene_summary.json and legend.md into DIR and exit")
@@ -408,13 +431,97 @@ def _write_sections(scene, element_ids: list[str], plane: str, out_dir: str, *, 
     return written
 
 
+def target_kind(target: str) -> str:
+    """What ``target`` is: ``TARGET_PACKAGE`` (a ``.zip`` file, or a directory with a package's manifest and scene),
+    ``TARGET_PLAN`` (a directory with a plan's ``plan.json`` and ``history.jsonl``) or ``TARGET_RUN`` (anything else)."""
+
+    path = Path(target)
+    if path.is_file() and path.suffix.lower() == PACKAGE_SUFFIX:
+        return TARGET_PACKAGE
+    if path.is_dir():
+        if all((path / name).is_file() for name in PLAN_FILES):
+            return TARGET_PLAN
+        if all((path / name).is_file() for name in PACKAGE_FILES):
+            return TARGET_PACKAGE
+    return TARGET_RUN
+
+
+PLAN_ONLY = (("revision", "--revision"), ("mechanical", "--mechanical"), ("finding", "--finding"))
+
+
+def _assembly_scene(target: str, kind: str, args: argparse.Namespace):
+    """The assembly view of a package or a plan directory, or the exit code of a refusal (JSON error printed)."""
+
+    from .viewer import AssemblyViewError, ViewerInputError, package_view_scene
+
+    if kind == TARGET_PACKAGE:
+        for name, flag in PLAN_ONLY:
+            if getattr(args, name, None) is not None:
+                print(f"error: {flag} applies to a plan directory", file=sys.stderr)
+                return USAGE_ERROR
+        try:
+            return package_view_scene(target, checks=not args.no_checks)
+        except (ViewerInputError, AssemblyViewError) as exc:
+            _json_out({"status": "ERROR", "error": {"code": "VIEW_INPUT_INVALID", "message": str(exc)}})
+            return VIEW_INPUT_ERROR
+    if args.no_checks:
+        print("error: --no-checks applies to a package; a plan is always shown with its checks", file=sys.stderr)
+        return USAGE_ERROR
+    return _plan_scene(target, args)
+
+
+def _plan_scene(plan_dir: str, args: argparse.Namespace):
+    """A plan directory's view: ``os_optics.assembly_plan.open_plan_view(plan_dir, revision=, mechanical=)`` gives the
+    revision, its projection context and its findings."""
+
+    from . import assembly_plan
+    from .assembly_plan.contract import AssemblyPlanError, AssemblyPlanErrorCode
+    from .assembly_plan.mechanical import MechanicalCatalogError
+    from .viewer import AssemblyViewError, ViewerInputError, plan_view_scene
+
+    opener = getattr(assembly_plan, "open_plan_view", None)
+    if opener is None:
+        _json_out({"status": "ERROR", "error": {"code": "VIEW_INPUT_INVALID", "message": (
+            "this os-optics build cannot open a plan directory (it has no os_optics.assembly_plan.open_plan_view); view the "
+            "plan's preview package instead: os-optics assembly plan preview PLAN --out preview.zip")}})
+        return VIEW_INPUT_ERROR
+    try:
+        revision, context, findings = opener(plan_dir, revision=args.revision, mechanical=tuple(args.mechanical or ()))
+        return plan_view_scene(revision, context, findings=findings, finding_id=args.finding)
+    except AssemblyPlanError as exc:
+        _json_out({"status": "ERROR", "error": exc.as_dict()})
+        return PLAN_DIR_ERROR if exc.code is AssemblyPlanErrorCode.PLAN_DIR_INCONSISTENT else VIEW_INPUT_ERROR
+    except MechanicalCatalogError as exc:
+        _json_out({"status": "ERROR", "error": exc.as_dict()})
+        return VIEW_INPUT_ERROR
+    except (ViewerInputError, AssemblyViewError) as exc:
+        _json_out({"status": "ERROR", "error": {"code": "VIEW_INPUT_INVALID", "message": str(exc)}})
+        return VIEW_INPUT_ERROR
+
+
 def command(args: argparse.Namespace) -> int:
     from .viewer import ViewerInputError, optical_view_scene
 
     run_dirs = list(args.run_dir or ())
     if not run_dirs:
-        print("error: give a run directory (written by 'os-optics project run --out-dir')", file=sys.stderr)
+        print("error: give a run directory (written by 'os-optics project run --out-dir'), an assembly preview package or a "
+              "plan directory", file=sys.stderr)
         return USAGE_ERROR
+    kinds = [target_kind(t) for t in run_dirs]
+    if any(k != TARGET_RUN for k in kinds):
+        if len(run_dirs) > 1:
+            print("error: give one assembly preview package or plan directory at a time", file=sys.stderr)
+            return USAGE_ERROR
+        scene = _assembly_scene(run_dirs[0], kinds[0], args)
+        if isinstance(scene, int):
+            return scene
+        # a commercial package stays in its delivery's terms (no self-contained copy); a local plan's package may be shared
+        local = scene.identity.get("plan_id") is not None
+        return present(scene, args, allow_html=local)
+    for name, flag in (*PLAN_ONLY, ("no_checks", "--no-checks")):
+        if getattr(args, name, None) not in (None, False):
+            print(f"error: {flag} applies to an assembly preview package or a plan directory", file=sys.stderr)
+            return USAGE_ERROR
     if len(run_dirs) > 1:
         return _batch(run_dirs, args)
     try:

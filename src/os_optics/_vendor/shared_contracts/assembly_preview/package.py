@@ -32,7 +32,6 @@ from typing import Any
 from pydantic import ValidationError
 
 from .manifest import (
-    ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION,
     GLB_MEDIA_TYPE,
     JSON_MEDIA_TYPE,
     MANIFEST_PATH,
@@ -41,8 +40,9 @@ from .manifest import (
     AssemblyPreviewManifestV1,
     PackageBindingV1,
     PackageFileV1,
-    UsageTermsV1,
     content_hash_of,
+    manifest_schema_version_for,
+    usage_terms_for,
 )
 from .scene import AssemblyPreviewSceneV1, FinishV1
 
@@ -109,7 +109,9 @@ def build_assembly_preview_package(
     binding: PackageBindingV1,
     package_revision: int = 1,
 ) -> AssemblyPreviewPackageV1:
-    """Assemble scene + geometry files into a package, compute the manifest, and verify the result."""
+    """Assemble scene + geometry files into a package, compute the manifest, and verify the result. The manifest
+    version and usage terms follow from ``binding``: 3.0 / ``UsageTermsV1`` for the commercial binding, 3.1 /
+    ``LocalUsageTermsV1`` for the LOCAL_PLAN binding."""
 
     files: dict[str, bytes] = {SCENE_PATH: json_file_bytes(scene.payload())}
     for path in sorted(geometry):
@@ -121,9 +123,9 @@ def build_assembly_preview_package(
     )
     content = {
         "schema": "opensci.assembly_preview.manifest",
-        "schema_version": ASSEMBLY_PREVIEW_MANIFEST_SCHEMA_VERSION,
+        "schema_version": manifest_schema_version_for(binding),
         "package_revision": package_revision,
-        "usage": UsageTermsV1().model_dump(mode="json", by_alias=True, exclude_none=True),
+        "usage": usage_terms_for(binding).model_dump(mode="json", by_alias=True, exclude_none=True),
         "binding": binding.model_dump(mode="json", by_alias=True, exclude_none=True),
         "files": [e.model_dump(mode="json", by_alias=True, exclude_none=True) for e in entries],
     }
@@ -150,8 +152,12 @@ def verify_assembly_preview_package(
     expected_project_hash: str | None = None,
     expected_resolution_hash: str | None = None,
     expected_content_hash: str | None = None,
+    expected_plan_digest: str | None = None,
 ) -> tuple[str, ...]:
-    """Every problem found in a package (empty tuple = valid). Never raises on malformed input."""
+    """Every problem found in a package (empty tuple = valid). Never raises on malformed input. ``expected_*`` pin the
+    package to a Project hash, a resolution hash (commercial binding), a content hash or a plan digest (LOCAL_PLAN
+    binding); a pin the binding cannot meet (a resolution hash of a local package, a plan digest of a commercial one) is
+    a problem."""
 
     problems: list[str] = []
     if len(files) > MAX_PACKAGE_FILES:
@@ -185,14 +191,10 @@ def verify_assembly_preview_package(
         if len(data) != entry.size_bytes or sha256_hex(bytes(data)) != entry.sha256:
             problems.append(f"{path!r}: size or SHA-256 does not match the manifest")
 
-    binding = manifest.binding
-    for label, got, want in (
-        ("project hash", binding.project.project_hash.digest, expected_project_hash),
-        ("resolution hash", binding.resolution.resolution_hash.digest, expected_resolution_hash),
-        ("package content hash", manifest.package_content_hash, expected_content_hash),
-    ):
-        if want is not None and got != want:
-            problems.append(f"{label} {got} is not the expected {want}")
+    problems.extend(binding_pin_problems(manifest, expected_project_hash=expected_project_hash,
+                                         expected_resolution_hash=expected_resolution_hash,
+                                         expected_content_hash=expected_content_hash,
+                                         expected_plan_digest=expected_plan_digest))
 
     if SCENE_PATH not in files:
         return tuple(problems)
@@ -216,6 +218,22 @@ def verify_assembly_preview_package(
                                                               part.geometry.triangle_count,
                                                               part.geometry.bounds_min_mm, part.geometry.bounds_max_mm))
     return tuple(problems)
+
+
+def binding_pin_problems(manifest: AssemblyPreviewManifestV1, *, expected_project_hash: str | None = None,
+                         expected_resolution_hash: str | None = None, expected_content_hash: str | None = None,
+                         expected_plan_digest: str | None = None) -> list[str]:
+    """The manifest values that differ from the caller's pins (a pin the binding has no value for differs)."""
+
+    binding = manifest.binding
+    resolution = binding.resolution.resolution_hash.digest if binding.resolution is not None else None
+    plan = binding.local_plan.plan_digest.digest if binding.local_plan is not None else None
+    return [f"{label} {got} is not the expected {want}" for label, got, want in (
+        ("project hash", binding.project.project_hash.digest, expected_project_hash),
+        ("resolution hash", resolution, expected_resolution_hash),
+        ("package content hash", manifest.package_content_hash, expected_content_hash),
+        ("plan digest", plan, expected_plan_digest),
+    ) if want is not None and got != want]
 
 
 def _first_error(exc: Exception) -> str:

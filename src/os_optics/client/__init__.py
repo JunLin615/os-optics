@@ -25,8 +25,15 @@ The whole workflow::
     client.report_bank_transfer(order["order_id"])          # only once the person who paid says it was made
     # After OpenSci has confirmed receipt of the payment:
     drawing = client.assembly_drawing(rid, "drawing", preview=preview)  # detail in memory -> drawing files in drawing/
-    client.upload_assembly_results(rid, drawing=drawing, preview=preview)  # validation, then drawing; read back
-    client.artifact_sets(rid)                               # what is stored for this resolution
+    # (drawings are never uploaded: they stay on this device)
+
+The BOM-only OpenSci service retires the design path above (``ORDERING_BASIS_RETIRED`` / ``ROUTE_RETIRED``, recovery
+``USE_LOCAL_PLAN``): plan the assembly on this device (``os-optics assembly plan``) and buy its parts as a purchase BOM,
+quoted with OpenSci's line review (``os_optics.client.bom_review``)::
+
+    quote = client.quote_bom(json.load(open("BOM.json")))   # 201: resolution_id, resolution.bom_review
+    quote["resolution"]["bom_review"]["status"]             # ORDERABLE -> client.create_order(quote["resolution_id"])
+    # CHANGES_REQUIRED: bom_review.review_document(...) proposes the confirmation; quote_bom(confirmed) sends it
 
 Order options: a design order chooses mechanical supply (``NONE``: the optics only; ``DERIVED``: OpenSci mounts,
 posts and post holders), platform (``NONE`` or the OpenSci ``BREADBOARD``) and assembly (``CUSTOMER`` or ``OPENSCI``),
@@ -91,6 +98,7 @@ from .api import (
     runtime_label,
     submission_document,
 )
+from .bom_review import confirmation_body, purchase_bom_body, review_document, review_of
 from .credentials import (
     ENV_TOKEN,
     ENV_TOKEN_FILE,
@@ -141,15 +149,19 @@ __all__ = [
     "ProtectedContentError",
     "Recovery",
     "canonical_json_bytes",
+    "confirmation_body",
     "default_token_file",
     "design_order_constraints",
     "feedback_document",
     "idempotency_key_for",
     "normalize_api_url",
     "part_list_document",
+    "purchase_bom_body",
     "read_token_file",
     "remove_token_file",
     "resolve_token",
+    "review_document",
+    "review_of",
     "runtime_label",
     "save_token_file",
     "submission_document",

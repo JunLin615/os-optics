@@ -10,7 +10,9 @@ Enum values of the packages are never printed raw: each has its own key (``mecha
 ``note_code.DOF_FIXED`` ...), with a readable fallback for a value this generator does not know yet.
 
 A key may have a ``<key>_table`` variant: the wording for a drawing on the customer's own optical table (no OpenSci
-breadboard), which ``steps.Words`` picks for such a drawing.
+breadboard), which ``steps.Words`` picks for such a drawing; and a ``<key>_local`` variant: the wording for the drawing of
+a package generated on the user's device from a local assembly plan (drawing schema 4.2: "Assembly drawing of your
+design", design BOM lines), which ``steps.Words`` picks first for such a drawing.
 
 Every Simplified Chinese text is tidied as it is filled (``tidy_zh``): no space between two Chinese characters or next
 to full-width punctuation (a filled-in value may bring one), and one space between Latin letters or digits and Chinese
@@ -92,6 +94,20 @@ EN: dict[str, str] = {
                     "Item balloons carry the Customer Purchase BOM line of each part."),
     "svg.desc": ("{title}. Commercial resolution {resolution}; Assembly Preview Package {preview} rev {revision}; Assembly "
                  "Detail Package {detail}. {description}"),
+    # ---- the drawing of a local assembly plan (drawing schema 4.2)
+    "title_local": "Assembly drawing of your design",
+    "banner.title_local": "ASSEMBLY DRAWING OF YOUR DESIGN",
+    "banner.subtitle_local": "your design as assembled - dimensions in mm with their basis - balloons carry the design BOM lines",
+    "description_local": ("Assembly drawing of your design. Dimensions in millimetres, each marked with its basis. Item balloons "
+                          "carry the design BOM line of each part."),
+    "svg.desc_local": ("{title}. Local assembly plan {resolution}; Assembly Preview Package {preview} rev {revision}; Assembly "
+                       "Detail Package {detail}. {description}"),
+    "legend.title_local": "PARTS LEGEND - design BOM lines (what you buy: see your purchase BOM)",
+    "legend.supply.CUSTOMER_OWNED": "your own part",
+    "legend.supply.UNRESOLVED": "not resolved",
+    "tb.title_local": "ASSEMBLY DRAWING",
+    "tb.title_sub_local": "your design",
+    "tb.release.LOCAL_PLAN": "generated on your device from your assembly plan",
     # ---- views
     "view.FRONT": "FRONT VIEW",
     "view.SIDE": "RIGHT SIDE VIEW",
@@ -453,6 +469,17 @@ ZH: dict[str, str] = {
     "watermark": "诊断图 - 不可交付",
     "description": "您的 OpenSci 系统的详细装配图。尺寸单位为毫米，每个尺寸均注明依据。序号气泡标注各零件对应的客户采购清单行。",
     "svg.desc": "{title}。商业方案 {resolution}；装配预览包 {preview} 版本 {revision}；装配详细数据包 {detail}。{description}",
+    "title_local": "您的设计的装配图",
+    "banner.title_local": "您的设计的装配图",
+    "banner.subtitle_local": "您的设计（装配状态） - 尺寸单位 mm，均注明依据 - 序号气泡对应设计物料清单行",
+    "description_local": "您的设计的装配图。尺寸单位为毫米，每个尺寸均注明依据。序号气泡标注各零件对应的设计物料清单行。",
+    "svg.desc_local": "{title}。本地装配方案 {resolution}；装配预览包 {preview} 版本 {revision}；装配详细数据包 {detail}。{description}",
+    "legend.title_local": "零件表 - 设计物料清单行（采购内容见您的采购清单）",
+    "legend.supply.CUSTOMER_OWNED": "您自备的零件",
+    "legend.supply.UNRESOLVED": "未确定",
+    "tb.title_local": "装配图",
+    "tb.title_sub_local": "您的设计",
+    "tb.release.LOCAL_PLAN": "由您的装配方案在本机生成",
     "view.FRONT": "前视图",
     "view.SIDE": "右视图",
     "view.PLAN": "俯视图",
