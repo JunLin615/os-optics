@@ -7,9 +7,12 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
+from .._vendor.shared_contracts.design_catalog.material_physics import STANDARD_PRESSURE_PA, STANDARD_TEMPERATURE_C
+from ..composition.rotation import QUARTER_TURN_DEG
+from .csv_table import NUMBER_MAX, NUMBER_MIN
 from .errors import PrescriptionErrorCode as E, SourceLocation, refuse
 from .ir import (
-    MM_PER_UNIT, VACUUM_WAVELENGTH_QUANTUM_NM, WAVELENGTHS_AIR,
+    MM_PER_UNIT, NM_PER_UM, VACUUM_WAVELENGTH_QUANTUM_NM, WAVELENGTHS_AIR,
     IrSurface, MaterialRef, ObjectSpace, Prescription, ReferenceEnvironment,
     air_to_vacuum_nm, power_to_mm, to_mm,
 )
@@ -18,7 +21,8 @@ FORMAT_ID = ".len"
 _NUMBER = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 _TOKEN = re.compile(r'\s+|//.*|"[^"\n]*"|;|(?:[^\s;"/]|/(?!/))+')
 _SYSTEM = {"UNI", "WV", "WW", "EBR", "NAO", "ANG", "OBH"}
-_SURFACE = {"AIR", "GLA", "RD", "TH", "AP", "AST", "CC", "AD", "AE", "AF", "AG"}
+_ASPHERE_POWERS = {"AD": 4, "AE": 6, "AF": 8, "AG": 10}
+_SURFACE = {"AIR", "GLA", "RD", "TH", "AP", "AST", "CC", *_ASPHERE_POWERS}
 
 
 @dataclass(frozen=True)
@@ -37,7 +41,7 @@ class _Record:
                 value = Decimal(raw)
                 if value == 0:
                     return Decimal(0)
-                if Decimal("1e-300") <= value.copy_abs() <= Decimal("1e300"):
+                if NUMBER_MIN <= value.copy_abs() <= NUMBER_MAX:
                     return value
             except InvalidOperation:
                 pass
@@ -152,7 +156,7 @@ def _surface(block, unit: str, is_stop: bool, last: bool) -> IrSurface:
         raise refuse(E.THICKNESS_INVALID, "expected finite axial spacing, positive between physical surfaces",
                      data["TH"].loc if "TH" in data else loc.at("TH"))
     coeffs = []
-    for power, key in zip((4, 6, 8, 10), ("AD", "AE", "AF", "AG")):
+    for key, power in _ASPHERE_POWERS.items():
         if key in data:
             while len(coeffs) < (power - 4) // 2:
                 coeffs.append(Decimal(0))
@@ -191,7 +195,7 @@ def _spectrum(system, header, environment):
     if weights[0] <= 0 or any(w < 0 for w in weights):
         raise refuse(E.VALUE_INVALID, "weights must be nonnegative and the primary weight positive", (weight or header).loc)
     wavelengths = tuple(
-        air_to_vacuum_nm(v * 1000, environment.temperature_c, environment.pressure_pa).quantize(VACUUM_WAVELENGTH_QUANTUM_NM)
+        air_to_vacuum_nm(v * NM_PER_UM, environment.temperature_c, environment.pressure_pa).quantize(VACUUM_WAVELENGTH_QUANTUM_NM)
         for v in values
     )
     return wavelengths, weights, (wave or header).loc
@@ -208,7 +212,7 @@ def _fields(system, header, unit, infinite):
     else:
         record = system.get("ANG")
         value = record.scalar() if record else Decimal(0)
-        if value and (not infinite or abs(value) >= 90):
+        if value and (not infinite or abs(value) >= QUARTER_TURN_DEG):
             raise refuse(E.UNSUPPORTED_FEATURE, "use angles below 90 degrees for an object at infinity", record.loc)
         kind = "angle"
     return kind, (axis, (Decimal(0), value)) if value else (axis,), (record or header).loc
@@ -245,7 +249,7 @@ def read_len(text: str, *, default_unit: str = "mm", requested_unit: str | None 
         raise refuse(E.UNSUPPORTED_FEATURE, "only one aperture stop is supported", physical[stops[1]][1]["AST"].loc)
     stop = stops[0] if stops else 0
     surfaces = tuple(_surface(block, unit, i == stop, i == len(physical) - 1) for i, block in enumerate(physical))
-    environment = ReferenceEnvironment(Decimal(20), Decimal(101325))
+    environment = ReferenceEnvironment(STANDARD_TEMPERATURE_C, STANDARD_PRESSURE_PA)
     wavelengths, weights, wave_loc = _spectrum(system, header, environment)
     field_type, fields, field_loc = _fields(system, header, unit, infinite)
     pupil = to_mm(system["EBR"].scalar(), unit) * 2 if "EBR" in system else None
